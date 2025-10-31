@@ -284,11 +284,11 @@ for step in range(steps):
 
     # 2) External velocities at each body (vectorized pairwise sum)
     for a in bodies:
-        v_ext[a] = sum_{b!=a} (a.Q, b.Q) -> (Q_b/(4πρ0)) * r_ab / |r_ab|^3
+        v_ext[a] = sum_{b!=a} (a.Q, b.Q) -> -(Q_b/4π) * r_ab / |r_ab|^3
 
     # 3) Forces
     for a in bodies:
-        F_inc = (4/3) * (a.Q/(4π)) * v_ext[a]                  # eq. (4)
+        F_inc = medium.rho0 * a.Q * v_ext[a]                  # control-surface lemma
         if use_compressible:
             F_comp = compressible_correction_analytic(a, v_ext[a], bodies, medium)  # O(Ma^2), from eq. (7)
         else:

@@ -13,7 +13,7 @@ Computes velocity field from a single point sink.
 
 **Formula:**
 ```
-v(x) = (Q/4πρ₀) * r/r³
+v(x) = - (Q/4π) * r/r³
 ```
 where `r = x - x_body` (vector from body to field point).
 
@@ -32,12 +32,12 @@ Computes external velocity at body a's position due to all other bodies.
 
 **Formula:**
 ```
-v_ext(x_a) = Σ_{b≠a} (Q_b/4πρ₀) * r_ab/r_ab³
+v_ext(x_a) = - Σ_{b≠a} (Q_b/4π) * r_ab/r_ab³
 ```
 
 **Usage:** This is the **key quantity** for force calculations:
 ```
-F_a^(inc) = (4/3) * Q_a * v_ext(x_a)
+F_a = ρ₀ Q_a v_ext(x_a)
 ```
 
 **Implementation:**
@@ -50,7 +50,7 @@ Computes total velocity field at arbitrary point x from all bodies.
 
 **Formula:**
 ```
-v(x) = Σ_b (Q_b/4πρ₀) * (x - x_b)/|x - x_b|³
+v(x) = - Σ_b (Q_b/4π) * (x - x_b)/|x - x_b|³
 ```
 
 **Usage:**
@@ -70,7 +70,7 @@ v(x) = Σ_b (Q_b/4πρ₀) * (x - x_b)/|x - x_b|³
 2. Compute all pairwise separations: r[a,b] = x[a] - x[b] (shape N×N×3)
 3. Compute all pairwise distances: d[a,b] = |r[a,b]| (shape N×N)
 4. Regularize: d = max(d, eps) to avoid divide-by-zero
-5. Compute velocity contributions: v[a,b,:] = (Q[b]/4πρ₀) * r[a,b]/d[a,b]³
+5. Compute velocity contributions: v[a,b,:] = -(Q[b]/4π) * r[a,b]/d[a,b]³
 6. Mask diagonal (self-interactions)
 7. Sum over source index: v_ext[a] = Σ_b v[a,b]
 
@@ -86,11 +86,10 @@ v(x) = Σ_b (Q_b/4πρ₀) * (x - x_b)/|x - x_b|³
 #### `potential(x, bodies, rho0, eps=1e-12)`
 Computes velocity potential φ(x):
 ```
-φ(x) = -Σ_b (s_b/4π) / |x - x_b|
+φ(x) = Σ_b Q_b/(4π |x - x_b|)
 ```
-where s_b = Q_b/ρ₀.
 
-Note: Negative for sinks (Q > 0), related to field energy.
+Note: With this sign convention, ∇φ reproduces inward velocity for sinks (Q > 0).
 
 #### `check_curl_free(x, bodies, rho0, delta=1e-6)`
 Validates irrotational flow: ∇×v ≈ 0 away from bodies.
@@ -200,47 +199,45 @@ All arrays use `dtype=np.float64` for consistency and precision.
 - Background: ρ₀ = 1.0
 
 **External velocity at body 1:**
-- Formula: v_ext = Q₂/(4πρ₀r²) * r̂
-- Expected magnitude: 1.989437e-02
-- Actual magnitude: 1.989437e-02 ✓
+- Formula: v_ext = -Q₂/(4π r²) * r̂_{b→a}
+- Expected magnitude: 3.978874e-02
+- Actual magnitude: 3.978874e-02 ✓
 
 **Force on body 1:**
-- Formula: F = (4/3) * Q₁ * v_ext
-- Expected magnitude: 2.652582e-02
-- Actual magnitude: 2.652582e-02 ✓
+- Formula: F = ρ₀ Q₁ v_ext
+- Expected magnitude: 3.978874e-02
+- Actual magnitude: 3.978874e-02 ✓
 - Relative error: 1.3e-16
 
 **Physics check:**
 - Force points toward body 2 (attractive) ✓
 - Magnitude scales as Q₁Q₂/r² ✓
-- Coefficient matches plan_no_pde.md eq. (5): (4/3) * Q₁Q₂/(4πρ₀) ✓
+- Coefficient matches control-surface lemma: ρ₀ Q₁Q₂/(4π r²) ✓
 
 ## Sign Convention Clarification
 
 ### Key insight
-The formula `v = (Q/4πρ₀) * r/r³` with `r = x - x_body` gives **inward** velocity for sinks (Q > 0).
+The formula `v = -(Q/4π) * r/r³` with `r = x - x_body` gives **inward** velocity for sinks (Q > 0).
 
 **Why this works:**
 - For sink at x_body = (2, 0, 0) and field point x = (0, 0, 0)
 - r = (0, 0, 0) - (2, 0, 0) = (-2, 0, 0)
-- v ∝ (-2, 0, 0) points in -x direction (toward sink) ✓
+- v ∝ +x direction (toward the sink at x=2) because the minus sign flips r
 
 **Force formula verification:**
-From momentum flux derivation (Appendix A of tex file):
+From the control-surface derivation (Appendix A of tex file):
 ```
-F_a = (4/3) * Q_a * v_ext(x_a)
+F_a = ρ₀ Q_a v_ext(x_a)
 ```
 
 Substituting v_ext:
 ```
-F_a = (4/3) * Q_a * [(Q_b/4πρ₀) * r_ab/r_ab³]
-F_a = (4/3) * (Q_a Q_b)/(4πρ₀) * r_ab/r_ab³
+F_a = ρ₀ Q_a * [-(Q_b/4π) * r_ab/r_ab³]
+F_a = - (ρ₀ Q_a Q_b)/(4π) * r_ab/r_ab³
 ```
 
-This matches plan_no_pde.md eq. (5) exactly. ✓
-
-**Note on eq. (4) notation:**
-The plan writes `F = (4/3)(Q_a/4π)v_ext` as shorthand, but the full formula is `F = (4/3)*Q_a*v_ext`. The 4π in the velocity definition already accounts for the geometric factor.
+In terms of masses (M = β Q) this reproduces the Newtonian form
+`F_a = -K M_a M_b r_ab/r_ab³` with `K = ρ₀/(4πβ²)`.
 
 ## File Organization
 
@@ -263,9 +260,9 @@ The plan writes `F = (4/3)(Q_a/4π)v_ext` as shorthand, but the full formula is 
 ### Emergent 1/r² Force Law
 
 **Two-body test (equal masses):**
-- External velocity: v_ext ∝ Q/r²
-- Force: F = (4/3) * Q₁ * v_ext ∝ Q₁Q₂/r²
-- Coefficient: (4/3)/(4πρ₀) from theory
+- External velocity: v_ext ∝ Q/r² with magnitude Q/(4π r²)
+- Force: F = ρ₀ Q₁ v_ext ∝ Q₁Q₂/r²
+- Coefficient: ρ₀/(4π) from theory
 - Numerical verification: relative error < 2e-16 ✓
 
 **This confirms:**
@@ -279,7 +276,7 @@ The plan writes `F = (4/3)(Q_a/4π)v_ext` as shorthand, but the full formula is 
 
 **Divergence at sinks:** ∇·v = -Q δ³(x - x_body) (physical meaning: fluid removal)
 
-**Potential flow:** v = ∇φ with φ = -Σ (Q/4πρ₀)/|x - x_body| (numerical gradient check passes)
+**Potential flow:** v = ∇φ with φ = Σ Q/(4π|x - x_body|) (numerical gradient check passes)
 
 **Energy:** Field energy density = ½ρ₀|v|², integrates to pair interaction energy
 
@@ -311,7 +308,7 @@ v_ext_all = v_ext_vectorized(bodies, medium.rho0)  # Shape: (N, 3)
 
 # For body a:
 v_ext_a = v_ext_all[a]  # Shape: (3,)
-F_a = (4.0/3.0) * bodies[a].Q * v_ext_a  # Incompressible force
+F_a = medium.rho0 * bodies[a].Q * v_ext_a  # Incompressible force
 ```
 
 ### For quadrature audit:

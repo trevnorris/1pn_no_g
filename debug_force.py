@@ -48,32 +48,15 @@ print(f"\nExpected force magnitude: {F_expected:.6e}")
 
 # Test various formulas
 print("\n" + "="*70)
-print("TESTING DIFFERENT FORMULAS:")
+print("CONTROL-SURFACE LEMMA CHECK")
 print("="*70)
 
-# Formula 1: Current (4/3) * (Q/4π) * v_ext
-F1 = (4.0/3.0) * (Q2/(4.0*np.pi)) * v_ext
-print(f"1. F = (4/3) * (Q/4π) * v_ext:     {np.linalg.norm(F1):.6e}  (ratio: {F_expected/np.linalg.norm(F1):.2f})")
+# Control-surface lemma: F = ρ₀ Q v_ext
+F_control = rho0 * Q2 * v_ext
+ratio = F_expected / np.linalg.norm(F_control)
+print(f"F = ρ₀ Q v_ext: {np.linalg.norm(F_control):.6e}  (ratio: {ratio:.2f})")
 
-# Formula 2: (4/3) * Q * v_ext
-F2 = (4.0/3.0) * Q2 * v_ext
-print(f"2. F = (4/3) * Q * v_ext:          {np.linalg.norm(F2):.6e}  (ratio: {F_expected/np.linalg.norm(F2):.2f})")
-
-# Formula 3: ρ₀ * (4/3) * (Q/4π) * v_ext
-F3 = rho0 * (4.0/3.0) * (Q2/(4.0*np.pi)) * v_ext
-print(f"3. F = ρ₀ * (4/3) * (Q/4π) * v_ext: {np.linalg.norm(F3):.6e}  (ratio: {F_expected/np.linalg.norm(F3):.2f})")
-
-# Formula 4: ρ₀ * Q * v_ext
-F4 = rho0 * Q2 * v_ext
-print(f"4. F = ρ₀ * Q * v_ext:              {np.linalg.norm(F4):.6e}  (ratio: {F_expected/np.linalg.norm(F4):.2f})")
-
-# Formula 5: ρ₀² * (4/3) * (Q/4π) * v_ext
-F5 = rho0**2 * (4.0/3.0) * (Q2/(4.0*np.pi)) * v_ext
-print(f"5. F = ρ₀² * (4/3) * (Q/4π) * v_ext: {np.linalg.norm(F5):.6e}  (ratio: {F_expected/np.linalg.norm(F5):.2f})")
-
-# Formula 6: Direct from paper's formula with Q/(4πρ₀) definition
-# If v_ext = Σ Q/(4πρ₀) r/r³, and F = ρ₀ Q v_ext from paper
-F6 = rho0 * Q2 * v_ext
-print(f"6. F = ρ₀ * Q * v_ext (paper):      {np.linalg.norm(F6):.6e}  (ratio: {F_expected/np.linalg.norm(F6):.2f})")
-
-print(f"\nTarget ratio should be 1.00")
+if np.allclose(np.linalg.norm(F_control), F_expected, rtol=1e-12):
+    print("\n✓ Control-surface lemma matches Newtonian expectation")
+else:
+    print("\n⚠ Control-surface lemma mismatch — investigate further")

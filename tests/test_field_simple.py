@@ -27,8 +27,8 @@ def test_v_self_radial():
 
     v = v_self(x, x_body, Q, rho0)
 
-    # Should point in +x direction
-    assert v[0] > 0
+    # Should point toward the sink (negative x direction)
+    assert v[0] < 0
     assert abs(v[1]) < 1e-12
     assert abs(v[2]) < 1e-12
     print("PASS")
@@ -212,23 +212,19 @@ def test_force_coefficient():
     # External velocity at body 1 due to body 2
     v_ext = v_ext_at(b1.x, bodies, 0, rho0)
 
-    # Theoretical magnitude: Q_2/(4πρ₀r²)
-    expected_mag = b2.Q / (4.0 * np.pi * rho0 * r_sep * r_sep)
+    # Theoretical magnitude: Q_2/(4π r²)
+    expected_mag = b2.Q / (4.0 * np.pi * r_sep * r_sep)
     actual_mag = np.linalg.norm(v_ext)
 
     rel_error = abs(actual_mag - expected_mag) / expected_mag
     assert rel_error < 1e-10
 
-    # Force on body 1 (incompressible formula from plan_no_pde.md eq. 4):
-    # F_a = (4/3) * Q_a * v_ext
-    # Note: eq (4) in the plan writes this as (4/3)(Q_a/4π)v_ext but this is
-    # shorthand notation; the full derivation gives (4/3)*Q_a*v_ext
-    F_factor = (4.0/3.0) * b1.Q
-    F_1 = F_factor * v_ext
+    # Force on body 1 (control-surface lemma): F_a = ρ₀ Q_a v_ext
+    F_1 = rho0 * b1.Q * v_ext
     F_mag = np.linalg.norm(F_1)
 
-    # Theoretical force magnitude: (4/3) * Q₁Q₂/(4πρ₀r²)
-    F_theory = (4.0/3.0) * (b1.Q * b2.Q) / (4.0 * np.pi * rho0 * r_sep * r_sep)
+    # Theoretical force magnitude: ρ₀ Q₁Q₂/(4π r²)
+    F_theory = rho0 * (b1.Q * b2.Q) / (4.0 * np.pi * r_sep * r_sep)
 
     rel_error_F = abs(F_mag - F_theory) / F_theory
     assert rel_error_F < 1e-10

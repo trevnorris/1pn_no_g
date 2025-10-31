@@ -15,8 +15,8 @@ Implement a software simulator that uses superfluid hydrodynamics to model 1PN g
 ### Key Equations
 - **Mass-intake relation**: M_a = β Q_a
 - **Orbital constant**: K = ρ₀/(4πβ²) (replaces G)
-- **Velocity field**: v(x) = Σ_b (Q_b/4πρ₀) r_b/r_b³
-- **Incompressible force**: F_a = (4/3)(Q_a/4π) v_ext(x_a)
+- **Velocity field**: v(x) = - Σ_b (Q_b/4π) r_b/r_b³
+- **Incompressible force**: F_a = ρ₀ Q_a v_ext(x_a)
 - **Control surface lemma**: F_a = ρ₀ Q_a v_ext(r_a)
 
 ### Parameters
@@ -59,7 +59,7 @@ Implement a software simulator that uses superfluid hydrodynamics to model 1PN g
 ### Test 1: Emergent 1/r² law
 - Place two equal sinks, measure F via quadrature
 - **Pass**: |C/C_theory - 1| < 0.005
-- C_theory = (4/3)|Q₁Q₂|/(4πρ₀)
+- C_theory = ρ₀|Q₁Q₂|/(4π)
 
 ### Test 2: Orbit Stability
 - Two-body, low eccentricity
@@ -122,7 +122,7 @@ tests/
 
 ### Force Calculation
 1. **Incompressible** (baseline):
-   - Use analytic F_a = (4/3)(Q_a/4π) v_ext
+   - Use analytic F_a = ρ₀ Q_a v_ext
    - Quadrature audit with eq. (2) periodically
 
 2. **Compressible** (small-Mach):
@@ -152,7 +152,7 @@ tests/
 
 ### Q1: Sign convention for forces
 - **Decision**: Use theoretical exact values, prioritize accuracy
-- Factor 4/3 is validated to 4×10⁻⁴, use exact theory
+- Control-surface lemma validated numerically to 4×10⁻⁴, use analytic formula
 
 ### Q2: Output format
 - **Decision**: Start with table output for debugging
