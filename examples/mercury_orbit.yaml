@@ -1,0 +1,143 @@
+# Superfluid Orbit Simulator Configuration
+# Mercury orbit example
+#
+# This configuration demonstrates a two-body system (Sun-Mercury) using
+# superfluid hydrodynamics to compute forces. No gravitational constant G
+# appears; instead, forces emerge from momentum flux in the superfluid.
+
+# ============================================================================
+# Medium: Ambient superfluid properties
+# ============================================================================
+medium:
+  # Ambient density [code units: arbitrary, sets overall scale]
+  rho0: 1.0
+
+  # Sound speed [AU/yr, much faster than orbital speeds]
+  # Controls compressible corrections and perihelion precession.
+  # For incompressible limit, use cs >> v_orbital (e.g., 1e10).
+  # For 1PN-like effects, use finite cs (e.g., 1e4).
+  cs: 10000.0
+
+  # Mass-intake factor [code units]
+  # Relates body mass M to volumetric intake Q via Q = M/beta0.
+  # Larger beta0 means weaker forces (smaller K = rho0/(4*pi*beta0^2)).
+  beta0: 10000000000.0
+
+  # Rarefaction exponent (optional, default: 0.0)
+  # When gamma_beta = 0, beta is constant (Solar System regime).
+  # When gamma_beta > 0, beta varies with local density.
+  gamma_beta: 0.0
+
+# ============================================================================
+# Bodies: Fluid intakes (mass objects)
+# ============================================================================
+bodies:
+  - name: Sun
+    # Mass [M_sun, code units]
+    M: 1.0
+
+    # Position [AU]
+    x: [0.0, 0.0, 0.0]
+
+    # Velocity [AU/yr]
+    v: [0.0, 0.0, 0.0]
+
+    # Control surface radius [AU]
+    # Must satisfy: mouth_size << R << separation
+    # Too small: numerical issues in quadrature
+    # Too large: near-field expansion breaks down
+    # Typical: R ~ 1e-4 to 1e-3 for separations ~ 0.1-1 AU
+    R: 0.001
+
+  - name: Mercury
+    M: 3.3e-07
+    x: [0.387, 0.0, 0.0]
+    v: [0.0, 4.5346062834869914e-11, 0.0]
+    R: 0.0005
+
+# ============================================================================
+# Numerics: Integration and force calculation options
+# ============================================================================
+numerics:
+  # Timestep [code time units: yr]
+  # Should be << orbital period for accuracy.
+  # Suggested: dt ~ T_orbit / 100 for low-eccentricity orbits.
+  dt: 0.002
+
+  # Total number of integration steps
+  steps: 200000
+
+  # Audit frequency: every N steps, compute forces via quadrature
+  # and compare to analytic formula. Ensures analytic path is correct.
+  # Set to 0 to disable auditing (faster, but less robust).
+  audit_every: 500
+
+  # Number of quadrature points for audit (Fibonacci sphere)
+  # More points = better accuracy but slower.
+  # 256-512 is usually sufficient, 1024 for high precision.
+  npts_audit: 512
+
+  # Use compressible force corrections (finite cs)?
+  # If false, use incompressible (cs -> infinity) baseline only.
+  # If true, compute finite-Mach corrections (perihelion precession).
+  use_compressible: true
+
+  # Use flux-based mass intake evolution?
+  # If true, masses M_a evolve via surface flux integration.
+  # If false, masses are constant (typical for Solar System).
+  use_flux_mass: false
+
+  # Intake update frequency (if use_flux_mass=true)
+  # Update masses every N steps based on integrated flux.
+  intake_every: 2000
+
+# ============================================================================
+# GR 1PN Comparator: Independent reference calculation
+# ============================================================================
+compare_gr_1pn:
+  # Enable GR comparison module?
+  # If true, integrate EIH 1PN equations separately and compare precession.
+  # GR module never influences slab forces (fully independent).
+  enable: true
+
+  # Speed of light [AU/yr]
+  # c = 299792 km/s = 63239.7263 AU/yr
+  c_light: 63239.7263
+
+  # Measure perihelion precession?
+  # If true, track apsis passages and compute precession rate.
+  measure_peri: true
+
+# ============================================================================
+# Outputs: What to save and how often
+# ============================================================================
+outputs:
+  # Save state every N steps
+  # Trajectories, forces, and diagnostics written at this frequency.
+  save_every: 1000
+
+  # Write trajectory to CSV file?
+  # If true, save time, position, velocity, mass, intake for all bodies.
+  write_csv: true
+
+  # List of plots to generate (optional, for post-processing)
+  # Available plots: orbit, precession_vs_time, force_decomp, energy, elements
+  plots:
+    - orbit
+    - precession_vs_time
+    - force_decomp
+
+# ============================================================================
+# Expected outputs for this configuration
+# ============================================================================
+# - Stable circular orbit with radius a = 0.387 AU
+# - Orbital period T ~ 0.24 yr (88 days, Mercury's actual period)
+# - Perihelion precession (if use_compressible=true) ~ few arcsec/orbit
+# - Precession scales as 1/cs^2 (test by varying cs)
+# - Forces match quadrature to < 0.1% (if audit_every > 0)
+#
+# To modify:
+# - Increase eccentricity: add v_z component, reduce v_y
+# - Add more bodies: copy body template, adjust positions
+# - Change cs: vary by factor of 2 to verify cs^-2 scaling
+# - Disable compressible: set use_compressible=false for incompressible baseline

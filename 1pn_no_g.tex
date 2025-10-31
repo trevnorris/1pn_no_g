@@ -1,0 +1,332 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,bm,mathtools}
+\usepackage{physics}
+\usepackage{amsthm}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\usepackage{mdframed}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\setlist{nosep}
+\numberwithin{equation}{section}
+
+\newenvironment{resultbox}{\begin{mdframed}[linewidth=0.8pt,roundcorner=6pt]}{\end{mdframed}}
+
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{lemma}[proposition]{Lemma}
+
+\theoremstyle{remark}
+\newtheorem*{remark}{Remark}
+
+\theoremstyle{definition}
+\newtheorem{definition}[proposition]{Definition}
+
+\title{Superfluid Slab Gravity Without \texorpdfstring{$G$}{G}: \\
+Exact Newtonian Orbits and Conservative 1PN--Like Effects from a Single Superfluid Equation \\[4pt]
+\large (Corrected and clarified edition)}
+\author{VT-7 Collaboration}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Section 0: Reader's guide and main claims}
+\label{sec:claims}
+\paragraph{Scope and stance.}
+We make no ontological claim about the nature of gravity; we simply show that Newtonian gravity and 1PN--like orbital structures follow from superfluid hydrodynamics on a slab with appropriate boundary conditions.
+
+\paragraph{What we assume (one equation, plus mouths).}
+A single superfluid lives on a 3D slab with complex order parameter $\psi=\sqrt{\rho}\,e^{i\theta}$. Bodies are modeled as tiny \emph{intakes} (\emph{mouths}) that remove fluid locally at rates $q_a(t)$. In hydrodynamic variables $(\rho,\mathbf v)$ this gives continuity with sink terms and the inviscid superfluid Euler/Bernoulli equation (including quantum pressure). There is \emph{no} gravitational field and \emph{no} $G$ in the theory; the orbital constant that appears is $K\equiv \rho_0/(4\pi\beta^2)$.
+
+\paragraph{How gravity appears (derived, not assumed).}
+Outside the tiny mouths, take the \emph{ideal} exterior limit: uniform ambient density, irrotational flow, negligible dispersion. The velocity field is potential and satisfies a Poisson equation with point sinks. Computing the force as \emph{external} momentum flux through a small control surface around each mouth yields $\mathbf F_a=\rho_0\,Q_a\,\mathbf v_{\rm ext}(\mathbf r_a)$ (control-surface lemma). Identifying inertial mass with throughput, $M_a=\beta Q_a$, makes accelerations independent of the test body (automatic equivalence principle) and reproduces \emph{exact} Newtonian $N$-body motion with the single constant $K=\rho_0/(4\pi\beta^2)$.
+
+\paragraph{What ``1PN-like'' means here (same equation, small terms kept).}
+Keeping small effects already present in the same equation---finite sound speed $c_s$ (retarded response), convective/Bernoulli nonlinearity (field self-energy), dispersion via the healing length $\xi$, and finite mouth size $a_0$---produces a compact, \emph{conservative} correction to the two-body dynamics with the same structures as the familiar 1PN orbital sector (perihelion advance, velocity-dependent central terms). No new fields are added; all coefficients are functions of $(c_s,\xi,a_0)$ and the equation of state near $\rho_0$.
+
+\paragraph{One non-gravitational datum fixes the absolute scale.}
+Orbits determine only $K=\rho_0/(4\pi\beta^2)$, not $\rho_0$ and $\beta$ separately. A single non-gravitational datum (e.g., a bound/measurement of $c_s$, $\xi$, or a low-frequency impedance) fixes the universal flow-per-mass $Q/M=1/\beta$, turning masses into absolute intakes for simulation.
+
+\paragraph{Universality and where it can fail (capacity).}
+The mapping $M=\beta Q$ is universal when mouths are far below sonic capacity. Define the surface Mach number $\mathrm{Ma}=v(R)/c_s=Q/(4\pi R^2 c_s)$. If $\mathrm{Ma}\ll1$, Newton is recovered and any rarefied halo is $\propto r^{-4}$ and tiny. Near $\mathrm{Ma}\sim1$, the intake \emph{chokes} at $Q_{\rm crit}\sim4\pi R^2\rho_0 c_s$, giving a controlled route to non-Newtonian ``saturation'' in extreme objects.
+
+\paragraph{What we \emph{do not} attempt here.}
+We do not treat light, lensing, or radiation reaction. Electromagnetism and photon propagation live in the bulk of the broader program and are unnecessary to obtain conservative orbital phenomenology on the slab.
+
+\paragraph{Key symbols.}
+$\rho_0$: ambient density; $c_s$: sound speed; $\xi$: healing length; $a_0$: mouth size; $Q$: volumetric intake; $\beta$: mass--intake factor ($M=\beta Q$); $K$: Newton-form constant $\rho_0/(4\pi\beta^2)$.
+
+\section{Introduction and scope}
+\label{sec:intro}
+We derive Newtonian $N$-body gravity, and its conservative 1PN-like orbital corrections, from a \emph{single} superfluid equation on a 3D slab with localized \emph{intakes} (``mouths''). No gravitational field or constant is assumed: bodies draw slab fluid at rates $q_a$, and the exterior flow exerts forces obtained by momentum flux.
+In the ideal exterior regime (uniform density, irrotational flow, negligible dispersion), the velocity potential solves a Poisson equation with point sinks; evaluating the external momentum flux across a small sphere surrounding each mouth yields a thrust $\mathbf F=\rho_0 Q\,\mathbf v_{\rm ext}$. Identifying inertial mass as throughput, $M=\beta Q$, produces the exact Newtonian law with a single combination $K=\rho_0/(4\pi\beta^2)$. Keeping the small terms of the \emph{same} equation (finite $c_s$, dispersion $\xi$, finite mouth size $a_0$) generates a compact, conservative two-body Lagrangian with the same structures that control 1PN orbital phenomenology.
+
+\section{Unreduced superfluid slab: equation, mouths, and observables}
+\label{sec:model}
+
+\subsection{Governing equation (no $G$)}
+The slab is modeled by a complex order parameter $\psi(\mathbf x,t)=\sqrt{\rho(\mathbf x,t)}\,e^{i\theta(\mathbf x,t)}$ obeying a Gross--Pitaevskii--type evolution with localized \emph{intakes}:
+\begin{equation}
+i\,\hbar_*\,\partial_t\psi
+=\Big[-\frac{\hbar_*^2}{2m_*}\nabla^2+\mu'(\rho)\Big]\psi
+\;+\; i\sum_{a=1}^N q_a(t)\,W_a\!\big(\mathbf x-\mathbf r_a(t)\big)\,\psi .
+\label{eq:GP}
+\end{equation}
+Here $\rho=|\psi|^2$; $\mathbf v=\frac{\hbar_*}{m_*}\nabla\theta$ (irrotational away from vortex cores); $\mu'(\rho)$ derives from a barotropic EOS with $c_s^2=\rho_0\,\mu''(\rho_0)$;  $\xi=\hbar_*/(\sqrt2\,m_*c_s)$ is the healing length; each mouth $a$ removes fluid at rate $q_a(t)$ through a normalized shape $W_a(\mathbf x)$ supported in a ball of radius $a_0$.
+
+\subsection{Hydrodynamic form (Madelung split)}
+Write $\psi=\sqrt\rho\,e^{i\theta}$ and separate real/imaginary parts:
+\begin{align}
+\partial_t\rho+\nabla\!\cdot(\rho\,\mathbf v)&= -\sum_a q_a(t)\,W_a(\mathbf x-\mathbf r_a),
+\label{eq:cont}\\
+\partial_t\mathbf v+(\mathbf v\!\cdot\!\nabla)\mathbf v&= -\nabla\!\Big[h(\rho)+Q(\rho)\Big],
+\label{eq:euler}
+\end{align}
+with enthalpy $h'(\rho)=\mu'(\rho)/m_*$ and quantum-pressure potential
+$Q(\rho) = -\frac{\hbar_*^2}{2m_*^2}\,\frac{\nabla^2\sqrt{\rho}}{\sqrt{\rho}}$.
+In the exterior (away from tiny mouths) the flow is irrotational, so $(\mathbf v\!\cdot\!\nabla)\mathbf v=\nabla(\tfrac12|\mathbf v|^2)$.
+
+\subsection{Flux conventions, external flow, and force}
+\label{sec:flux}
+We define the volumetric intake with the \emph{outward} normal $\mathbf n$ on a small sphere $\partial\mathcal B_a$ of radius $\varepsilon$ around mouth $a$ as
+\begin{equation}
+Q_a(t)\equiv -\oint_{\partial\mathcal B_a}\mathbf v\!\cdot \mathbf n\,\,dA,
+\qquad Q_a=\frac{q_a}{\rho_0}\,,
+\label{eq:Qdef}
+\end{equation}
+so that $Q_a>0$ corresponds to an inward (sink) flow. The net force on body $a$ is the \emph{external} momentum flux through $\partial\mathcal B_a$ (self-field subtracted):
+\begin{equation}
+\mathbf F_a \;=\; \oint_{\partial\mathcal B_a}
+\Big[\rho\,\mathbf v(\mathbf v\!\cdot\!\mathbf n) - \big(P(\rho)+\tfrac12\rho|\mathbf v|^2\big)\,\mathbf n\Big]\,dA \;+\; \mathbf F_a^{(Q)}.
+\label{eq:force}
+\end{equation}
+In the exterior ideal limit ($\rho\to\rho_0$), gradients of $\sqrt\rho$ vanish and with them the quantum-pressure surface contribution: $\mathbf F^{(Q)}_a=0$. In Sec.~\ref{sec:ideal} we evaluate \eqref{eq:force} explicitly and obtain the control-surface lemma.
+
+\paragraph{Scope note (bulk drain).}
+The removed fluid drains into an orthogonal 4D bulk (not modeled here); we focus solely on the slab dynamics where bodies reside.
+
+\section{Ideal limit and exact Newton mapping (no $G$)}
+\label{sec:ideal}
+
+\subsection{Potential-flow equation (sinks have positive potential)}
+Under the exterior ideal assumptions (uniform $\rho\to\rho_0$, irrotational flow, negligible dispersion), continuity gives
+\begin{equation}
+\nabla\!\cdot \mathbf v = -\sum_a Q_a\,\delta^3(\mathbf x-\mathbf r_a).
+\label{eq:divv}
+\end{equation}
+With $\mathbf v=\nabla\phi$ we obtain Poisson's equation
+\begin{equation}
+\nabla^2 \phi(\mathbf x,t) = -\sum_{a=1}^N Q_a(t)\,\delta^3\!\big(\mathbf x-\mathbf r_a(t)\big),
+\qquad
+\phi(\mathbf x,t) = +\sum_a \frac{Q_a(t)}{4\pi\,|\mathbf x-\mathbf r_a(t)|},
+\label{eq:poisson}
+\end{equation}
+since $\nabla^2(1/r)=-4\pi\delta^3$. Sinks ($Q_a>0$) thus have \emph{positive} potential and inward velocity $\mathbf v=\nabla\phi$.
+
+\subsection{Near-mouth expansion and momentum-flux force}
+Near mouth $a$ the velocity splits into an isotropic self-field plus the external field:
+\begin{equation}
+\mathbf v(\mathbf x)= -\frac{Q_a}{4\pi r^2}\,\hat{\mathbf r}+\mathbf v_{\rm ext}(\mathbf r_a)+O(r),\qquad
+r=|\mathbf x-\mathbf r_a|.
+\label{eq:near}
+\end{equation}
+Inserting \eqref{eq:near} into \eqref{eq:force} and subtracting the self term leaves
+\begin{equation}
+\boxed{\ \mathbf F_a = \rho_0 Q_a\,\mathbf v_{\rm ext}(\mathbf r_a)\ }\qquad\text{(control-surface lemma; explicit derivation in App.~\ref{app:flux}).}
+\label{eq:controlsurface}
+\end{equation}
+Using \eqref{eq:poisson},
+\begin{equation}
+\boxed{\ \mathbf F_a \;=\; \sum_{b\neq a} \frac{\rho_0}{4\pi}\,\frac{Q_a Q_b}{r_{ab}^2}\,\hat{\mathbf r}_{ab}\ },
+\qquad \hat{\mathbf r}_{ab}\equiv\frac{\mathbf r_b-\mathbf r_a}{r_{ab}}.
+\label{eq:pair_force}
+\end{equation}
+
+\subsection{Mass--intake map and Newton form}
+Define the mass--intake relation
+\begin{equation}
+M_a=\beta\,Q_a, \qquad [\beta]=\mathrm{kg\,s/m^3},
+\label{eq:massmap}
+\end{equation}
+then
+\begin{equation}
+\ddot{\mathbf r}_a \;=\; \sum_{b\neq a} K\,M_b\,\frac{\mathbf r_{b}-\mathbf r_{a}}{r_{ab}^3},
+\qquad \boxed{\,K\equiv \frac{\rho_0}{4\pi\beta^2}\,}.
+\label{eq:newton_form}
+\end{equation}
+No $G$ appears; orbital data determine only $K$.
+
+\subsection{Energy and Kepler checks}
+The field energy equals the pair interaction $U_{\rm fluid}=-\frac{\rho_0}{4\pi}\sum_{a<b}Q_aQ_b/r_{ab}=-K\sum_{a<b}M_aM_b/r_{ab}$. With $T=\tfrac12\sum_a M_a v_a^2$, $E=T+U_{\rm fluid}$ is conserved. For two bodies, $\ddot{\mathbf r}=-K(M_1+M_2)\mathbf r/r^3$ and $n^2 a^3=K(M_1+M_2)$, i.e. Kepler’s third law with $K$.
+
+\section{Beyond-ideal, same equation: small-parameter expansion}
+\label{sec:expansion}
+Define small parameters $\varepsilon=v/c_s\ll1$, $\chi=\xi/r\ll1$, $\delta=a_0/r\ll1$.
+Keeping the corresponding terms in the \emph{same} equations \eqref{eq:cont}--\eqref{eq:force} yields a conservative two-body Lagrangian
+\begin{equation}
+L_{\rm eff} = \frac12\,\mu\,v^2 + \frac{K\,M\mu}{r}
++ \frac{K\,M\mu}{2\,c_s^2\,r}\Big[ A_1\,v^2 + A_2\,(\hat{\mathbf n}\!\cdot\!\mathbf v)^2 \Big]
+- K\,M\mu\,\frac{B_\xi\,\xi^2+B_a\,a_0^2}{r^3}
++ O(\varepsilon^3,\chi^4,\delta^4),
+\label{eq:Leff}
+\end{equation}
+with $M=M_1+M_2$, $\mu=M_1M_2/M$, $\hat{\mathbf n}=\mathbf r/r$.
+Here: (i) $A_{1,2}=O(1)$ arise from finite sound speed (retardation) and convective nonlinearity; (ii) $B_\xi=O(1)$ arises from dispersion (quantum pressure); (iii) $B_a=O(1)$ parameterizes finite-mouth geometry (central term vanishes for spherical mouths in free space; see App.~\ref{app:mouth}).
+For smooth EOS and compact $W(\mathbf x)$ one has $|A_i|,|B_{\xi,a}|\lesssim \mathrm{few}$.
+
+For bound motion (semi-major axis $a$, eccentricity $e$), the perihelion advance is
+\begin{equation}
+\Delta\varpi =\frac{2\pi}{1-e^2}\left[\frac{K M}{a\,c_s^2}\,\mathcal A +\frac{\mathcal B_\xi\,\xi^2+\mathcal B_a\,a_0^2}{a^2}\right]
++ O(\varepsilon^3,\chi^4,\delta^4),
+\label{eq:precession}
+\end{equation}
+where the velocity-dependent pieces $\propto v^2/c_s^2$ yield the $KM/(a c_s^2)$ factor with $\mathcal A=O(1)$, and the static $r^{-3}$ pieces from $\xi$ and $a_0$ yield $(\xi^2+a_0^2)/a^2$ with $\mathcal B_{(\cdot)}=O(1)$.
+
+\section{Fixing the universal flow--per--mass with one non-gravitational datum}
+\label{sec:calibration}
+Orbits fix only $K=\rho_0/(4\pi\beta^2)$. The absolute throughput follows from
+\begin{equation}
+\boxed{\ \frac{Q}{M}=\frac{1}{\beta}=\sqrt{\frac{4\pi K}{\rho_0}}\ },
+\qquad \text{(requires one non-gravitational datum to fix $\rho_0$ or $\beta$).}
+\end{equation}
+\paragraph{Calibration as a procedure.}
+\begin{enumerate}[label=\arabic*)]
+\item Fit orbits $\Rightarrow$ determine $K$.
+\item Measure a non-gravitational datum $X$ (e.g., $c_s$, $\xi$, low-frequency impedance).
+\item Use the EOS to infer $\rho_0$ from $X$.
+\item Compute $\beta=\sqrt{\rho_0/(4\pi K)}$ and thus $Q/M=1/\beta$.
+\item All absolute throughputs $Q$ and flow fields are now fixed (capacity checks included).
+\end{enumerate}
+
+\section{Falsifiability and bounds}
+\label{sec:falsify}
+Conservative diagnostics: perihelion precession \eqref{eq:precession} and Lagrange-point shifts scale with the same combinations $K M/(a c_s^2)$ and $(\xi^2+a_0^2)/a^2$. Dissipative diagnostics (used only for bounds): any residual shear drag ($\mathbf F_d=-\gamma\mathbf v$) gives $\gamma<\mu|\dot a|/(2a)$ from an observed limit on $|\dot a|$; acoustic leakage power scales as $P_{\rm ac}\sim \rho_0 Q^2\Omega^4 a^2/c_s^3$ and yields a lower bound on $c_s$. Finite slab thickness $H$ introduces tiny near-field corrections $\propto r^2/H^3$ and, when coupled to finite $a_0$, a central renormalization $\propto (a_0/H)^2$ (App.~\ref{app:slab}). Vorticity would induce torque noise on orbits; current ephemerides tightly bound such noise.
+
+\section{Numerical scheme}
+\label{sec:numerics}
+Minimal loop:
+\begin{enumerate}[label=\arabic*)]
+\item Store $\{\mathbf r_a,\mathbf p_a,M_a,Q_a,R_a,\texttt{shape}_a\}$ with $M_a=\beta Q_a$.
+\item Compute fields either by closed-form potential flow (ideal mode) or by discretizing \eqref{eq:cont}--\eqref{eq:euler}.
+\item Evaluate forces by momentum flux with analytic self-field subtraction (App.~\ref{app:flux}).
+\item Integrate with symplectic KDK or Wisdom--Holman.
+\item Optional knobs: finite-$c_s$ (retarded evaluation to $O(\varepsilon^2)$), dispersion ($\xi$), finite mouth ($a_0$), slab thickness ($H$), capacity model $Q^{\rm eff}=Q^{\rm nom}/\sqrt{1+(Q^{\rm nom}/4\pi R^2c_s)^2}$.
+\item Diagnostics: invariants ($E,\mathbf L$), precession, Lagrange points, $\epsilon$-plateau for control surface, A/B force-path equality.
+\end{enumerate}
+
+\paragraph{Pseudocode (ideal mode).}
+\begin{verbatim}
+for each timestep:
+    1. phi(x,t) = + sum_a Q_a / (4*pi*|x - r_a|)          # sinks => positive potential
+    2. v_ext(r_a) = sum_{b != a} grad phi_b(r_a)
+    3. F_a = rho0 * Q_a * v_ext(r_a)
+    4. Update (r_a, p_a) via symplectic step
+    5. Monitor E, L, precession, control-surface epsilon-plateau
+\end{verbatim}
+
+\section{Structural correspondence to metric 1PN (dictionary only)}
+\label{sec:dictionary}
+Our conservative Lagrangian \eqref{eq:Leff} matches the \emph{structure} of the EIH 1PN two-body Lagrangian: identify $K\leftrightarrow G$ and, optionally, $c_s\leftrightarrow c$ to recover GR coefficient values (e.g., $\mathcal A=3$ in the test-body limit). Medium fingerprints without a GR analog are the $r^{-3}$ pieces $\propto \xi^2$ and $a_0^2$, which should be bounded small if exact GR matching is desired.
+
+\section{Conclusions and outlook}
+\label{sec:conclusion}
+A single superfluid equation on a 3D slab with localized intakes yields exact Newtonian $N$-body motion without $G$. Keeping small, already-present terms produces conservative, 1PN-like orbital effects with parameters intrinsic to the slab ($c_s,\xi,a_0$). Dissipative channels are naturally tiny and serve to bound parameters. A minimal simulator and a clear test plan render the framework falsifiable. An optional dictionary to GR is a matter of parameter choices, not extra structure.
+
+\appendix
+
+\section{Control–surface derivation of $\mathbf F=\rho_0 Q\,\mathbf v_{\rm ext}$}
+\label{app:flux}
+We present the explicit evaluation of the surface integral in \eqref{eq:force} at linear order in the external field.
+Consider a small sphere $\partial\mathcal B_\varepsilon$ of radius $\varepsilon$ centered on a mouth at $\mathbf r_a$.
+Let $\hat{\mathbf n}$ be the outward normal and write the near-field decomposition
+$\mathbf v=\mathbf v_{\rm self}+\mathbf v_{\rm ext}+O(\varepsilon)$ with
+$\mathbf v_{\rm self}=-(Q_a/4\pi\varepsilon^2)\hat{\mathbf n}$ as in \eqref{eq:near}.
+The inviscid momentum flux through $\partial\mathcal B_\varepsilon$ is
+\begin{equation}
+\mathbf F^{(\mathrm{HD})}
+=\oint \Big[\rho_0\,\mathbf v(\mathbf v\!\cdot\!\hat{\mathbf n})
+-\big(P+\tfrac12\rho_0 v^2\big)\hat{\mathbf n}\Big]\,dA.
+\end{equation}
+Keeping terms linear in $\mathbf v_{\rm ext}$ and using the angular averages
+$\int \hat n_i\,d\Omega=0$ and $\int \hat n_i \hat n_j\,d\Omega=\tfrac{4\pi}{3}\delta_{ij}$, one finds
+\begin{align}
+\oint \mathbf v_{\rm self}(\mathbf v_{\rm ext}\!\cdot\!\hat{\mathbf n})\,dA &= -\frac{Q_a}{3}\,\mathbf v_{\rm ext},\\
+\oint \mathbf v_{\rm ext}(\mathbf v_{\rm self}\!\cdot\!\hat{\mathbf n})\,dA &= -Q_a\,\mathbf v_{\rm ext},\\
+\oint \big(\mathbf v_{\rm self}\!\cdot\!\mathbf v_{\rm ext}\big)\hat{\mathbf n}\,dA &= -\frac{Q_a}{3}\,\mathbf v_{\rm ext}.
+\end{align}
+The pressure/kinetic combination contributes $+\tfrac{Q_a}{3}\mathbf v_{\rm ext}$, cancelling the corresponding isotropic part so that
+$\mathbf F^{(\mathrm{HD})}=-\rho_0 Q_a\,\mathbf v_{\rm ext}$.
+Adopting the intake convention \eqref{eq:Qdef}, the total force on the \emph{body} is
+\begin{equation}
+\boxed{\ \mathbf F=\rho_0\,Q_a\,\mathbf v_{\rm ext}(\mathbf r_a)\ }.
+\end{equation}
+Equivalently, one may attribute the final sign to the quantum/Madelung stress surface term or to a finite-part subtraction of the isotropic self-field; all routes yield the same control-surface lemma.
+
+\section{Two–body effective Lagrangian through $O(\varepsilon^2,\chi^2,\delta^2)$}
+\label{app:lagrangian}
+We sketch the steps; explicit algebra is standard and yields \eqref{eq:Leff}.
+
+\subsection*{Finite $c_s$ (retardation)}
+Use the retarded Green function for the linearized potential and expand the retarded time $t-R/c_s$ to $O(v^2/c_s^2)$. The resulting Lagrangian correction is
+\begin{equation*}
+\Delta L_{c_s}= \frac{K M_1M_2}{2 c_s^2 r}\big[\alpha_1(v_1^2+v_2^2)+\alpha_2\,\mathbf v_1\!\cdot\!\mathbf v_2+\alpha_3(\hat{\mathbf n}\!\cdot\!\mathbf v_1)(\hat{\mathbf n}\!\cdot\!\mathbf v_2)\big],
+\end{equation*}
+with $\alpha_i=O(1)$.
+
+\subsection*{Convective/Bernoulli nonlinearity}
+Eliminate $\rho'$ with the EOS to get a quadratic energy density $\propto |\nabla\phi|^2/c_s^2$, yielding $\Delta U_{\rm conv}=-(K M_1M_2/r)\,\alpha_4\,v_{\rm rel}^2/c_s^2$, with $\alpha_4=O(1)$.
+
+\subsection*{Dispersion}
+Include the $k^4$ piece from $Q(\rho)$ to get a static propagator $G(r)=(4\pi r)^{-1}[1+\xi^2/r^2+\cdots]$, i.e.\ $\Delta U_{\xi}=-K M_1M_2\,B_\xi\,\xi^2/r^3$, $B_\xi=O(1)$.
+
+\subsection*{Finite mouth}
+Multipole-expand a compact mouth shape $W(\mathbf x)$ with radius $a_0$. Anisotropy produces a quadrupolar $r^{-3}$ piece $\propto \mathcal Q_{ij}\hat n_i\hat n_j$ which averages to zero unless aligned; a central proxy is $-K M_1M_2\,B_a a_0^2/r^3$ for persistent alignment or boundary-coupled symmetry breaking, with $B_a=O(1)$.
+
+\section{Finite–mouth multipoles and $(a_0/r)^2$ corrections}
+\label{app:mouth}
+Let $W(\mathbf x)$ be a compact mouth of size $a_0$ and define $\Sigma_{ij}=\int x_i x_j W\,d^3x$, $I_2=\mathrm{Tr}\,\Sigma$, and the traceless quadrupole $\mathcal Q_{ij}=3\Sigma_{ij}-I_2\delta_{ij}$. For $R\gg a_0$,
+\begin{equation}
+\phi_a(\mathbf R)=-\frac{Q_a}{4\pi}\left[\frac{1}{R}+\frac{1}{8R^3}\,\mathcal Q_{ij}\hat R_i\hat R_j+\cdots\right].
+\end{equation}
+A \emph{spherical} mouth has $\mathcal Q_{ij}=0$ and thus an exactly monopolar exterior field (no $(a_0/r)^2$ correction in free space). Two-body interaction:
+\begin{equation}
+U=-K\frac{M_1M_2}{r}-\frac{K M_2}{8 r^3}\mathcal Q^{(1)}_{ij}\hat n_i\hat n_j-\frac{K M_1}{8 r^3}\mathcal Q^{(2)}_{ij}\hat n_i\hat n_j+\cdots.
+\end{equation}
+Angle averages kill the quadrupole unless there is persistent alignment (e.g., tidal locking).
+
+\section{Slab Green’s functions and finite thickness}
+\label{app:slab}
+For Neumann walls at $z=0,H$, the Green function is
+\begin{equation}
+G_N(\bm\rho,z,z')=\frac{1}{4\pi}\sum_{m=-\infty}^{\infty} \left[
+\frac{1}{\sqrt{\rho^2+(z-z'+2mH)^2}}
++\frac{1}{\sqrt{\rho^2+(z+z'-2mH)^2}} \right].
+\end{equation}
+Near-field ($r\ll H$): $G_N=\frac{1}{4\pi r}-\frac{\zeta(3)}{4\pi}\frac{r^2}{H^3}+O(r^4/H^5)$ (midplane). Thus $U=-K M_1M_2/r + K M_1M_2\,\frac{\zeta(3)}{4\pi}\,r^2/H^3+\cdots$. A central $1/r$ renormalization arises only when coupled with finite $a_0$ as $(a_0/H)^2$ (images shift the intake/pressure relation at the throat).
+
+\section{Units, dimensions, and post–hoc comparison to Newtonian parameters}
+\label{app:units}
+Dimensions (SI): $[\rho_0]=\si{kg.m^{-3}}$, $[c_s]=\si{m.s^{-1}}$, $[\xi]=\si{m}$, $[a_0]=\si{m}$, $[Q]=\si{m^3.s^{-1}}$, $[\beta]=\si{kg.s.m^{-3}}$, $[K]=\si{m^3.kg^{-1}.s^{-2}}$.
+Dictionary to Newton (optional): identify $K\leftrightarrow G$ and, if desired, $c_s\leftrightarrow c$.
+Throughput per mass: $\dfrac{Q}{M}=\dfrac{1}{\beta}=\sqrt{\dfrac{4\pi K}{\rho_0}}$.
+Capacity threshold surface gravity (from $v(R)=c_s$): $g_\star=2\sqrt{\pi}\,c_s\,\sqrt{K\rho_0}$.
+
+\paragraph{Dimensional check for $L_{\rm eff}$ terms in \eqref{eq:Leff}.}
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Term & Units \\
+\midrule
+$\tfrac12 \mu v^2$ & $\si{kg.m^2.s^{-2}}$ \\
+$K M\mu / r$ & $[\si{m^3.kg^{-1}.s^{-2}}][\si{kg}][\si{kg}]/[\si{m}]=\si{kg.m^2.s^{-2}}$ \\
+$K M\mu v^2/(c_s^2 r)$ & same as above $\to \si{kg.m^2.s^{-2}}$ \\
+$K M\mu \xi^2/r^3$ & $[\si{m^3.kg^{-1}.s^{-2}}][\si{kg}][\si{kg}][\si{m^2}]/[\si{m^3}]=\si{kg.m^2.s^{-2}}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}
