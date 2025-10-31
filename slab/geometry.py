@@ -220,7 +220,7 @@ def verify_sphere_identity_2(
     - v_ext is approximately constant over the small control surface
     - ∫ v(v·n) dA with v = v_self + v_ext splits into terms
     - The v_ext cross-term uses this identity to give (4πR²/3) v_ext
-    - Combined with other terms, this yields the 4/3 factor in eq. (5)
+    - Combined with flux normalization, this recovers F_a = ρ₀ Q_a v_ext(x_a)
     """
     # Use a test vector A
     A = np.array([1.0, 0.5, -0.3])
@@ -308,9 +308,10 @@ def sphere_integration_identities() -> str:
       → 0 + (s_a/4πR²)·(4πR²)·v_ext + 0 + (4πR²/3)·v_ext·(v_ext terms)
     <BLANKLINE>
     The leading term is (s_a)·v_ext = (Q_a/ρ₀)·v_ext.
-    Multiplying by ρ₀ gives F = Q_a·v_ext, and the detailed calc gives 4/3.
+    Multiplying by ρ₀ gives F = ρ₀ Q_a v_ext(x_a) once the angular average is
+    taken, matching the control-surface lemma.
     <BLANKLINE>
-    Final result: F_a^(inc) = (4/3)(Q_a/4π) v_ext(x_a)       [eq. 4]
+    Final result: F_a = ρ₀ Q_a v_ext(x_a)
     <BLANKLINE>
     """
     return """Sphere Integration Identities (plan_no_pde.md, eq. 3)
@@ -358,10 +359,11 @@ Actually: ∫ v(v·n) dA with v = v_self n + v_ext gives
 Using v_self = s_a/(4πR²) and Identity 2:
   → 0 + (s_a/4πR²)·(4πR²)·v_ext + 0 + (4πR²/3)·v_ext·(v_ext terms)
 
-The leading term is (s_a)·v_ext = (Q_a/ρ₀)·v_ext.
-Multiplying by ρ₀ gives F = Q_a·v_ext, and the detailed calc gives 4/3.
+    The leading term is (s_a)·v_ext = (Q_a/ρ₀)·v_ext.
+    Multiplying by ρ₀ gives F = ρ₀ Q_a v_ext(x_a) once the angular average is
+    taken, matching the control-surface lemma.
 
-Final result: F_a^(inc) = (4/3)(Q_a/4π) v_ext(x_a)       [eq. 4]
+    Final result: F_a = ρ₀ Q_a v_ext(x_a)
 
 """
 

@@ -21,7 +21,7 @@ This simulator implements the theory from the paper `1pn_no_g.tex`:
 
 **Velocity field** (potential flow with point sinks):
 ```
-v(x) = Σ (Q_b/4πρ₀) * r_b/r_b³
+v(x) = - Σ (Q_b/4π) * r_b/r_b³
 ```
 
 **Force** (control surface lemma):

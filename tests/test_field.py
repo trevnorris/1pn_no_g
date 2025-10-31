@@ -37,8 +37,8 @@ class TestVSelf:
 
         v = v_self(x, x_body, Q, rho0)
 
-        # Should point in +x direction (from body toward field point)
-        assert v[0] > 0
+        # Should point toward the sink (negative x direction)
+        assert v[0] < 0
         assert abs(v[1]) < 1e-12
         assert abs(v[2]) < 1e-12
 
@@ -77,7 +77,7 @@ class TestVSelf:
         assert np.allclose(v, 0.0)
 
     def test_magnitude_formula(self):
-        """Check exact magnitude: |v| = Q/(4πρ₀r²)."""
+        """Check exact magnitude: |v| = Q/(4πr²)."""
         x_body = np.array([0.0, 0.0, 0.0])
         x = np.array([2.0, 0.0, 0.0])
         Q = 3.0
@@ -87,7 +87,7 @@ class TestVSelf:
         mag = np.linalg.norm(v)
 
         r = 2.0
-        expected_mag = Q / (4.0 * np.pi * rho0 * r * r)
+        expected_mag = Q / (4.0 * np.pi * r * r)
 
         assert abs(mag - expected_mag) < 1e-10
 

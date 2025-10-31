@@ -311,8 +311,8 @@ def assemble_forces(
     Force calculation modes:
     ------------------------
     1. **Incompressible analytic** (default, fast):
-       F_a = (4/3) * (Q_a/4π) * v_ext(x_a)
-       Uses closed-form formula from angular averaging.
+       F_a = ρ₀ Q_a v_ext(x_a)
+       Uses closed-form control-surface result.
        Cost: O(N²) for pairwise v_ext calculation.
 
     2. **Incompressible quadrature** (audit path):

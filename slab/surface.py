@@ -7,11 +7,11 @@ emergent Newtonian forces without using a gravitational constant G.
 Physics background:
 - Bodies are modeled as SINKS (fluid intakes) with Q > 0 meaning inward flow
 - Forces arise from momentum flux through control surfaces around each body
-- The factor 4/3 emerges from angular averaging of the self×ext cross-term
+- The control-surface lemma gives F_a = ρ₀ Q_a v_ext(x_a)
 - See paper section 3 and Appendix A for detailed derivations
 
 Key equations:
-- Incompressible analytic: F_a = (4/3) * (Q_a/4π) * v_ext(x_a)  [plan eq. 4]
+- Incompressible analytic: F_a = ρ₀ Q_a v_ext(x_a)  [control-surface lemma]
 - Incompressible quadrature: F_a = ρ₀ ∫ v(v·n) dA  [plan eq. 2]
 - Compressible (future): Uses v_ext for ρ*, P* renormalization [plan eq. 7]
 """
@@ -39,16 +39,13 @@ def force_incompressible_analytic(
     --------
     From plan_no_pde.md equation (4) and paper equation (3.4):
 
-        F_a^(inc) = (4/3) * (Q_a/4π) * v_ext(x_a)
+        F_a = ρ₀ Q_a v_ext(x_a)
 
     where v_ext(x_a) is the velocity field at body a's location due to all
     other bodies (excluding body a's own self-field).
 
-    The factor 4/3 comes from the angular integral identity:
-
-        ∫ (n·A) n dA = (4πR²/3) A
-
-    for constant vector A over a sphere of radius R (proven in paper Appendix A).
+    The angular integral identity ∫(n·A) n dA = (4πR²/3) A combines with the
+    velocity field normalization to give the compact F_a = ρ₀ Q_a v_ext result.
 
     Since bodies are SINKS, Q_a > 0, and the force points in the direction of v_ext,
     which is the gradient of the potential created by other sinks.
@@ -103,9 +100,9 @@ def force_incompressible_analytic(
     # F_a = ρ₀ * Q_a * v_ext(r_a)
     #
     # This is the exact result from the momentum flux surface integral.
-    # Since v_ext from field.py is defined as: v_ext = Σ (Q_b/4πρ₀) r/r³,
-    # this gives: F = ρ₀ Q_a Σ (Q_b/4πρ₀) r/r³ = Σ (Q_a Q_b/4π) r/r³
-    #           = K M_a M_b / r²  (with K = ρ₀/(4πβ²), M = β Q)
+    # Since v_ext from field.py is defined as: v_ext = -Σ (Q_b/4π) r/r³,
+    # this gives: F = ρ₀ Q_a Σ [-(Q_b/4π) r/r³] = -Σ (ρ₀ Q_a Q_b/4π) r/r³
+    #           = -K M_a M_b / r²  (with K = ρ₀/(4πβ²), M = β Q)
     #
     # This produces the exact 1/r² force law with the correct coefficient.
     force = rho0 * Q_a * v_ext
@@ -142,7 +139,7 @@ def force_incompressible_quadrature(
     The total velocity on the surface is v = v_self + v_ext where:
 
         v_self = (Q_a / 4πR_a²) * n̂  (radial monopole from body a)
-        v_ext = Σ_{b≠a} (Q_b / 4πρ₀) * r_ab / r_ab³  (other bodies)
+        v_ext = - Σ_{b≠a} (Q_b / 4π) * r_ab / r_ab³  (other bodies)
 
     The integral naturally includes the self×ext cross-term which generates
     the force. Pure self×self terms integrate to zero by symmetry, and the

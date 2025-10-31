@@ -5,9 +5,8 @@ This module computes the velocity field from potential flow with point sinks.
 Bodies create radial inflow patterns that superpose linearly.
 
 Key equations (from plan_no_pde.md § 2):
-    φ(x) = -Σ_b s_b/(4π|x - x_b|)
-    v(x) = ∇φ = Σ_b (s_b/4π) r_b/r_b³
-    s_b ≡ Q_b/ρ₀
+    φ(x) = Σ_b Q_b/(4π|x - x_b|)
+    v(x) = ∇φ = -Σ_b (Q_b/4π) r_b/r_b³
 
 Sign convention: sinks have Q > 0, producing inward velocity field.
 For vector r_b = x - x_b (from body to field point), v points inward
@@ -38,7 +37,7 @@ def v_self(
     Computes the radial inflow velocity at point x due to a single
     sink of strength Q located at x_body:
 
-        v(x) = (Q/4πρ₀) * r/r³
+        v(x) = - (Q/4π) * r/r³
 
     where r = x - x_body is the vector from the sink to the field point.
 
@@ -60,7 +59,7 @@ def v_self(
     Notes:
         - When x = x_body (r = 0), returns zero vector to avoid singularity
         - In practice, forces are computed on control surfaces at finite radius
-        - The factor (Q/4πρ₀) has units [m³/s] = [velocity × area]
+        - The factor (Q/4π) has units [m³/s] = [velocity × area]
 
     Examples:
         >>> x = np.array([1.0, 0.0, 0.0])
@@ -68,7 +67,7 @@ def v_self(
         >>> Q = 1.0
         >>> rho0 = 1.0
         >>> v = v_self(x, x_body, Q, rho0)
-        >>> np.allclose(v, np.array([1.0/(4*np.pi), 0.0, 0.0]))
+        >>> np.allclose(v, np.array([-1.0/(4*np.pi), 0.0, 0.0]))
         True
     """
     # Vector from body to field point
@@ -79,10 +78,11 @@ def v_self(
     if r < eps:
         return np.zeros(3, dtype=np.float64)
 
-    # v = (Q/4πρ₀) * r_vec/r³
-    # Factor out 1/r³ = 1/(r² * r)
-    prefactor = Q / (4.0 * np.pi * rho0)
-    v = prefactor * r_vec / (r * r * r)
+    # v = -(Q/4π) * r_vec/r³
+    # rho0 is kept for API compatibility; incompressible velocity does
+    # not depend explicitly on density.
+    prefactor = Q / (4.0 * np.pi)
+    v = -prefactor * r_vec / (r * r * r)
 
     return v
 
@@ -100,11 +100,11 @@ def v_ext_at(
     This is the key quantity for force calculations. By the control-surface
     lemma (plan_no_pde.md § 3.2, eq. 4):
 
-        F_a^(inc) = (4/3) * (Q_a/4π) * v_ext(x_a)
+        F_a = ρ₀ Q_a v_ext(x_a)
 
     The external velocity is the superposition of all other sinks:
 
-        v_ext(x_a) = Σ_{b≠a} (Q_b/4πρ₀) * r_ab/r_ab³
+        v_ext(x_a) = - Σ_{b≠a} (Q_b/4π) * r_ab/r_ab³
 
     where r_ab = x_a - x_b is the vector from body b to body a.
 
@@ -130,8 +130,8 @@ def v_ext_at(
         >>> b2 = SimpleNamespace(x=np.array([1., 0., 0.]), Q=1.0)
         >>> bodies = [b1, b2]
         >>> v = v_ext_at(b1.x, bodies, 0, rho0=1.0)
-        >>> # Should point from b2 toward b1 (in -x direction)
-        >>> v[0] < 0  # True
+        >>> # Should point from b1 toward b2 (in +x direction)
+        >>> v[0] > 0  # True
     """
     v_ext = np.zeros(3, dtype=np.float64)
 
@@ -159,7 +159,7 @@ def v_total(
     Computes the full superfluid velocity field by summing contributions
     from all sinks:
 
-        v(x) = Σ_b (Q_b/4πρ₀) * (x - x_b)/|x - x_b|³
+        v(x) = - Σ_b (Q_b/4π) * (x - x_b)/|x - x_b|³
 
     This is used for:
     - Field visualization
@@ -210,7 +210,7 @@ def v_ext_vectorized(
     For N bodies, computes v_ext(x_a) for all a simultaneously using
     vectorized operations.
 
-    Returns v_ext[a] = Σ_{b≠a} (Q_b/4πρ₀) * r_ab/r_ab³
+    Returns v_ext[a] = -Σ_{b≠a} (Q_b/4π) * r_ab/r_ab³
 
     Performance strategy:
     - Build pairwise separation vectors (N×N×3 array)
@@ -237,7 +237,7 @@ def v_ext_vectorized(
         1. Extract positions into (N, 3) array
         2. Compute separations: r[a,b] = x[a] - x[b]
         3. Compute distances: d[a,b] = |r[a,b]|
-        4. Compute velocities: v[a,b] = (Q[b]/4πρ₀) * r[a,b]/d[a,b]³
+        4. Compute velocities: v[a,b] = -(Q[b]/4π) * r[a,b]/d[a,b]³
         5. Mask diagonal (self-interactions)
         6. Sum over source index b: v_ext[a] = Σ_b v[a,b]
 
@@ -280,9 +280,9 @@ def v_ext_vectorized(
     dist = np.where(dist < eps, eps, dist)
 
     # Compute velocity contributions
-    # v[a, b, :] = (Q_b/4πρ₀) * r_ab[a,b] / dist[a,b]³
+    # v[a, b, :] = -(Q_b/4π) * r_ab[a,b] / dist[a,b]³
     # Shape: (N, N, 3)
-    prefactor = intakes / (4.0 * np.pi * rho0)  # shape (N,)
+    prefactor = intakes / (4.0 * np.pi)  # shape (N,)
 
     # dist³ with shape (N, N)
     dist_cubed = dist * dist * dist
@@ -296,7 +296,7 @@ def v_ext_vectorized(
     # Multiply by separation vectors
     # coeff[:, :, None] has shape (N, N, 1)
     # r_ab has shape (N, N, 3)
-    v_pairwise = coeff[:, :, None] * r_ab  # shape (N, N, 3)
+    v_pairwise = -coeff[:, :, None] * r_ab  # shape (N, N, 3)
 
     # Mask out self-interactions (diagonal)
     mask = ~np.eye(N, dtype=bool)  # False on diagonal
@@ -345,12 +345,10 @@ def potential(
     Velocity potential φ(x) at point x.
 
     From plan_no_pde.md § 2:
-        φ(x) = -Σ_b (s_b/4π) / |x - x_b|
+        φ(x) = Σ_b (Q_b/4π) / |x - x_b|
 
-    where s_b = Q_b/ρ₀.
-
-    Note: Sign convention is chosen so that ∇φ gives inward velocity
-    for sinks (Q > 0).
+    Note: This sign convention ensures ∇φ gives inward velocity
+    for sinks (Q > 0), i.e., v = ∇φ = -Σ_b (Q_b/4π) r_b/r_b³.
 
     Args:
         x: Field point, shape (3,)
@@ -376,8 +374,7 @@ def potential(
             # Return large negative value or raise warning
             continue
 
-        s_b = body.Q / rho0
-        phi -= s_b / (4.0 * np.pi * r)
+        phi += body.Q / (4.0 * np.pi * r)
 
     return phi
 
