@@ -44,13 +44,28 @@ E = Σ (1/2) M_a v_a² - K Σ_{a<b} M_a M_b / r_ab
 
 ### Requirements
 
+Python 3.8 or later with:
+- numpy >= 1.21.0
+- pyyaml >= 5.4.1
+
+### Install
+
+**Option 1: Install with pip** (recommended):
 ```bash
-pip install numpy pyyaml
+cd /var/projects/papers/1pn_no_g
+pip install -e .
 ```
 
-Optional for testing:
+This installs the package and its dependencies (numpy, pyyaml).
+
+**Option 2: Install with dev dependencies**:
 ```bash
-pip install pytest  # If you want to run pytest-based tests
+pip install -e ".[dev]"  # Includes pytest, black, mypy, matplotlib, pandas
+```
+
+**Verify installation**:
+```bash
+python -c "from slab.medium import Medium; from slab.bodies import Body; print('✓ Ready to use')"
 ```
 
 ### Quick Start
