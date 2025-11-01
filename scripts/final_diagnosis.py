@@ -25,16 +25,23 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+print("DIAGNOSTIC: Starting final_diagnosis.py", flush=True)
+print("DIAGNOSTIC: Importing modules...", flush=True)
+
 import numpy as np
 import copy
 from slab.dynamics import integrate_orbit
 
+print("DIAGNOSTIC: Importing precession helpers...", flush=True)
 from scripts.precession_helpers import (
     analyse_precession,
     create_barycentric_mercury_config,
 )
 
+print("DIAGNOSTIC: All imports complete!", flush=True)
+
 # Create Mercury configuration (barycentric initial conditions)
+print("DIAGNOSTIC: Creating Mercury configuration...", flush=True)
 rho0 = 1.0
 beta0 = 0.045
 cs = 63239.7263
@@ -49,6 +56,7 @@ medium, bodies, params = create_barycentric_mercury_config(
     semi_major_axis=a,
 )
 
+print("DIAGNOSTIC: Configuration created successfully!", flush=True)
 sun, mercury = bodies
 T_orbit = params.T_orbit
 K = params.K
@@ -64,13 +72,18 @@ print(f"  T_orbit = {T_orbit:.4f} yr")
 print(f"  cs = {cs:.4f} AU/yr")
 print()
 
-# Integration parameters matching the production runs.  These are intentionally
-# coarse so we can reproduce the large apparent precession that motivated this
-# investigation, then quantify the discretisation error by re-running with a
-# finer timestep below.
-n_steps = 1000
-dt = 0.002
-total_time = n_steps * dt
+# Integration parameters: Test if quadrature resolution (n_points) is more
+# important than timestep resolution for capturing 1PN physics.
+#
+# Hypothesis: Surface integral accuracy >> timestep accuracy for 1PN signal
+#
+# Using dt=1×10⁻⁴ yr (2413 steps/orbit, still 20× better than original)
+# with n_points=256 (2× higher quadrature than previous 85% result)
+# Expected runtime: ~15-20 minutes
+dt = 1.0e-4  # yr - moderate timestep
+n_orbits_target = 8  # Number of orbits to integrate
+total_time = n_orbits_target * T_orbit
+n_steps = int(total_time / dt)
 n_orbits = total_time / T_orbit
 steps_per_orbit = T_orbit / dt
 
@@ -88,11 +101,16 @@ bodies_incomp = [copy.deepcopy(sun), copy.deepcopy(mercury)]
 opts_incomp = {
     'use_compressible': False,
     'use_quadrature': False,
-    'save_every': max(1, n_steps // 2000),
+    'save_every': max(1, n_steps // 500),  # Save ~500 points (enough for analysis)
     'verbose': False,
 }
 
+print(f"DIAGNOSTIC: Starting incompressible integration ({n_steps} steps)...", flush=True)
+print(f"DIAGNOSTIC: This may take ~30 seconds...", flush=True)
 traj_incomp, diag_incomp = integrate_orbit(bodies_incomp, medium, dt, n_steps, opts_incomp)
+print(f"DIAGNOSTIC: Incompressible integration complete!", flush=True)
+print(f"DIAGNOSTIC: Trajectory has {len(traj_incomp['t'])} saved points", flush=True)
+print(f"DIAGNOSTIC: Starting precession analysis (computing orbital elements)...", flush=True)
 
 analysis_incomp = analyse_precession(traj_incomp, params)
 domega_per_orbit_incomp = analysis_incomp['slope_per_orbit']
@@ -120,7 +138,7 @@ print()
 
 # Run WITH compressible forces
 print("=" * 70)
-print("RUN 2: WITH COMPRESSIBLE FORCES")
+print("RUN 2: WITH COMPRESSIBLE FORCES (same dt as incompressible)")
 print("=" * 70)
 print()
 
@@ -128,12 +146,18 @@ bodies_comp = [copy.deepcopy(sun), copy.deepcopy(mercury)]
 opts_comp = {
     'use_compressible': True,
     'use_quadrature': False,
-    'save_every': max(1, n_steps // 2000),
+    'save_every': max(1, n_steps // 500),
     'verbose': False,
-    'n_points': 128,
+    'n_points': 256,  # Higher quadrature (testing if surface integral accuracy matters more)
 }
 
+print(f"DIAGNOSTIC: Starting compressible integration ({n_steps} steps, n_points=256)...", flush=True)
+print(f"DIAGNOSTIC: Expected time: ~15-20 minutes...", flush=True)
+print(f"DIAGNOSTIC: Testing hypothesis: quadrature resolution > timestep resolution for 1PN", flush=True)
 traj_comp, diag_comp = integrate_orbit(bodies_comp, medium, dt, n_steps, opts_comp)
+print(f"DIAGNOSTIC: Compressible integration complete!", flush=True)
+print(f"DIAGNOSTIC: Trajectory has {len(traj_comp['t'])} saved points", flush=True)
+print(f"DIAGNOSTIC: Starting precession analysis...", flush=True)
 
 analysis_comp = analyse_precession(traj_comp, params)
 domega_per_orbit_comp = analysis_comp['slope_per_orbit']
@@ -174,6 +198,9 @@ else:
 print("=" * 70)
 print("ANALYSIS")
 print("=" * 70)
+print()
+print(f"NOTE: Both runs use dt = {dt:.3e} yr (~{steps_per_orbit:.0f} steps/orbit)")
+print(f"      Difference isolates the 1PN compressible correction from matched baselines.")
 print()
 
 print(
@@ -230,59 +257,63 @@ else:
 
 print()
 print("=" * 70)
-print("TIMESTEP CONVERGENCE CHECK (incompressible)")
+print("COARSE TIMESTEP COMPARISON (for reference)")
 print("=" * 70)
 print()
+print("The main runs above used dt = {:.3e} yr (~{:.0f} steps/orbit).".format(dt, steps_per_orbit))
+print("For comparison, here's the same run at coarse resolution (dt = 0.002 yr, ~121 steps/orbit):")
+print()
 
-refinement_factor = 40
-dt_refined = dt / refinement_factor
-n_steps_refined = n_steps * refinement_factor
-opts_incomp_refined = opts_incomp.copy()
-opts_incomp_refined['save_every'] = max(1, n_steps_refined // 200)
+# Run at the old coarse timestep for comparison
+dt_coarse = 0.002
+n_steps_coarse = int(total_time / dt_coarse)
+steps_per_orbit_coarse = T_orbit / dt_coarse
+opts_incomp_coarse = opts_incomp.copy()
+opts_incomp_coarse['save_every'] = max(1, n_steps_coarse // 2000)
 
 print(
-    "Refining timestep by ×{:.0f}: dt = {:.3e} yr, steps per orbit ≈ {:.0f}".format(
-        refinement_factor, dt_refined, steps_per_orbit * refinement_factor
+    "Coarse timestep: dt = {:.3e} yr, steps per orbit ≈ {:.0f}".format(
+        dt_coarse, steps_per_orbit_coarse
     )
 )
 
-bodies_refined = [copy.deepcopy(sun), copy.deepcopy(mercury)]
-traj_refined, _ = integrate_orbit(bodies_refined, medium, dt_refined, n_steps_refined, opts_incomp_refined)
+bodies_coarse = [copy.deepcopy(sun), copy.deepcopy(mercury)]
+traj_coarse, _ = integrate_orbit(bodies_coarse, medium, dt_coarse, n_steps_coarse, opts_incomp_coarse)
 
-analysis_refined = analyse_precession(traj_refined, params)
-domega_per_orbit_refined = analysis_refined['slope_per_orbit']
-peri_per_orbit_refined = analysis_refined['peri_per_orbit']
-peri_std_refined = analysis_refined['peri_std']
-n_peri_refined = analysis_refined['n_peri_cycles']
+analysis_coarse = analyse_precession(traj_coarse, params)
+domega_per_orbit_coarse = analysis_coarse['slope_per_orbit']
+peri_per_orbit_coarse = analysis_coarse['peri_per_orbit']
+peri_std_coarse = analysis_coarse['peri_std']
+n_peri_coarse = analysis_coarse['n_peri_cycles']
 
 print(
-    f"Refined precession (incompressible, slope fit): {domega_per_orbit_refined:.6e} rad/orbit"
+    f"Coarse precession (incompressible, slope fit): {domega_per_orbit_coarse:.6e} rad/orbit"
 )
 print(
-    f"                                           = {domega_per_orbit_refined * 206265:.6e} arcsec/orbit"
+    f"                                          = {domega_per_orbit_coarse * 206265:.6e} arcsec/orbit"
 )
-if np.isfinite(peri_per_orbit_refined):
-    err_arcsec = peri_std_refined * 206265.0
+if np.isfinite(peri_per_orbit_coarse):
+    err_arcsec = peri_std_coarse * 206265.0
     print(
-        f"Periapsis-to-periapsis: {peri_per_orbit_refined:.6e} rad/orbit"
-        f" ± {peri_std_refined:.2e} (n = {n_peri_refined})"
+        f"Periapsis-to-periapsis: {peri_per_orbit_coarse:.6e} rad/orbit"
+        f" ± {peri_std_coarse:.2e} (n = {n_peri_coarse})"
     )
     print(
-        f"                       = {peri_per_orbit_refined * 206265:.6e} arcsec/orbit"
+        f"                       = {peri_per_orbit_coarse * 206265:.6e} arcsec/orbit"
         f" ± {err_arcsec:.2e}"
     )
-if domega_per_orbit_refined != 0:
-    ratio = abs(domega_per_orbit_incomp / domega_per_orbit_refined)
+if domega_per_orbit_coarse != 0:
+    ratio = abs(domega_per_orbit_coarse / domega_per_orbit_incomp)
 else:
     ratio = np.inf
-print(f"Ratio coarse/refined ≈ {ratio:.1f}")
+print(f"\nRatio fine/coarse ≈ {1.0/ratio:.1f} (fine timestep reduces artifact by {ratio:.1f}×)")
 if (
     np.isfinite(peri_per_orbit_incomp)
-    and np.isfinite(peri_per_orbit_refined)
-    and peri_per_orbit_refined != 0
+    and np.isfinite(peri_per_orbit_coarse)
+    and peri_per_orbit_coarse != 0
 ):
-    ratio_peri = abs(peri_per_orbit_incomp / peri_per_orbit_refined)
-    print(f"Ratio coarse/refined (peri) ≈ {ratio_peri:.1f}")
+    ratio_peri = abs(peri_per_orbit_coarse / peri_per_orbit_incomp)
+    print(f"Ratio fine/coarse (peri) ≈ {1.0/ratio_peri:.1f}")
 print()
 
 print("=" * 70)
