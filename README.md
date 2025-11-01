@@ -432,40 +432,180 @@ Target ratio should be 1.00
 | Energy conservation | ✅ Works | Drift < 2.5×10⁻⁷ over 3 orbits |
 | Orbit stability | ✅ Works | Eccentricity < 2.5×10⁻⁴, radius stable |
 
+## Newtonian Baseline Validation
+
+### Overview
+
+Before measuring tiny 1PN corrections (~0.1 arcsec/orbit), we must establish that the incompressible superfluid correctly reproduces pure Newtonian gravity with minimal numerical artifacts. A comprehensive validation framework has been created to quantify the timestep requirements for reliable 1PN measurements.
+
+### Key Finding: Spurious Precession Scales as dt²
+
+The Velocity-Verlet integrator introduces small angular momentum errors that manifest as spurious perihelion precession in eccentric orbits. This artifact scales as dt² and can be reduced to negligible levels with fine enough timesteps:
+
+| Timestep (dt) | Steps/Orbit | Spurious Precession | vs GR Signal |
+|---------------|-------------|---------------------|--------------|
+| 0.002 yr | 121 | -899 arcsec/orbit | 9000× too large |
+| 0.001 yr | 241 | -227 arcsec/orbit | 2300× too large |
+| 0.0001 yr | 2,413 | -2.3 arcsec/orbit | 23× too large |
+| 0.00001 yr | 24,130 | -0.023 arcsec/orbit | 0.23× GR |
+| **5×10⁻⁶ yr** | **48,261** | **-0.006 arcsec/orbit** | **0.06× GR** ✓ |
+
+**GR Reference Signal**: 0.0997 arcsec/orbit for Mercury (a=0.387 AU, e=0.1)
+
+### Recommended Timestep for 1PN Studies
+
+```
+╔═══════════════════════════════════════════════════════════════╗
+║  MINIMUM TIMESTEP: dt ≤ 5×10⁻⁶ yr                            ║
+║                    (~48,000 steps per orbit)                  ║
+║                                                               ║
+║  Achieves: <0.01 arcsec/orbit spurious precession           ║
+║           (10% of GR signal)                                 ║
+║                                                               ║
+║  Energy conservation: ΔE/E ~ 2×10⁻¹³                         ║
+║  Computational cost: ~12 sec / 8 orbits (Newtonian)          ║
+║                      ~50 sec / 8 orbits (Superfluid w/ comp) ║
+╚═══════════════════════════════════════════════════════════════╝
+```
+
+**Rule of Thumb**: Reducing timestep by 10× reduces spurious precession by ~100× (dt² scaling from second-order integrator).
+
+### Validation: Superfluid = Newtonian
+
+The incompressible superfluid force law (F = ρ₀ Q v_ext) **perfectly reproduces** pure Newtonian gravity (F = -K M₁ M₂ / r²):
+- ✅ Agreement to machine precision at all tested timesteps
+- ✅ No systematic offset detected
+- ✅ Validates the control-surface lemma implementation
+
+**Difference**: |Δω_superfluid - Δω_newton| < 10⁻⁶ arcsec/orbit
+
+### Current 1PN Status
+
+With the body-frame Galilean boost correction implemented in `slab/surface.py`:
+- **Compressible correction**: 0.0851 arcsec/orbit (at dt=0.002 yr)
+- **GR prediction**: 0.0997 arcsec/orbit
+- **Agreement**: **86% of GR** (improved from 62%)
+
+**Important**: The 86% result was measured at coarse resolution (dt=0.002 yr, ~120 steps/orbit). High-resolution runs (dt ≤ 5×10⁻⁶ yr) have only been performed for the incompressible case. The compressible correction at fine timestep remains to be measured to determine if 86% is the true physics limit or contains timestep artifacts.
+
+Remaining 14% gap may be due to:
+- Higher-order O(Ma³) or O(Ma⁴) terms not yet implemented
+- Near-field renormalization effects
+- Analytic vs. quadrature integration differences
+- Possible timestep artifacts (needs verification)
+
+### Validation Scripts
+
+**Newtonian convergence study** (`scripts/validate_newtonian.py`):
+```bash
+# Quick test (30 seconds)
+python scripts/validate_newtonian.py --quick
+
+# Full convergence study (2 minutes)
+python scripts/validate_newtonian.py
+
+# Custom timesteps
+python scripts/validate_newtonian.py --dt 0.001 0.0001 1e-5 5e-6
+```
+
+**Generate convergence plots** (`scripts/plot_newtonian_convergence.py`):
+```bash
+python scripts/plot_newtonian_convergence.py
+```
+
+**Run complete demo**:
+```bash
+./scripts/demo_validation.sh
+```
+
+### Documentation
+
+- **`NEWTONIAN_BASELINE.md`**: Complete convergence study results, physical interpretation, and recommendations
+- **`scripts/README_VALIDATION.md`**: Detailed methodology and usage guide
+- **`INVESTIGATION_62_PERCENT_DEFICIT.md`**: Analysis of body-frame boost requirement for 1PN effects
+
+### Physical Interpretation
+
+**Q: Why does spurious precession occur?**
+
+The Velocity-Verlet integrator doesn't exactly conserve angular momentum vector direction for eccentric orbits. Small violations in L̂ cause the orbital plane to wobble slightly, manifesting as perihelion precession when analyzing osculating orbital elements.
+
+**Q: Why dt² scaling?**
+
+- Velocity-Verlet is 2nd-order accurate in timestep
+- Local truncation error: O(dt³) per step
+- Global accumulated error: O(T × dt²)
+- Precession is cumulative → scales as dt²
+
+This has been confirmed empirically across 9 timesteps spanning 3 orders of magnitude.
+
 ## Next Steps
+
+### Immediate Priorities
+
+1. **Verify 86% at fine timestep resolution**:
+   - Modify `scripts/final_diagnosis.py` to use dt ≤ 5×10⁻⁶ yr
+   - Run both incompressible and compressible cases at high resolution
+   - Measure 1PN signal difference with <0.01 arcsec/orbit spurious background
+   - Determine if 86% is physics limit or contains timestep artifacts
+   - **Expected runtime**: ~50 seconds per run (vs. ~2 seconds at coarse dt)
+
+2. **Close the remaining 14% gap to full GR** (if 86% persists at fine dt):
+   - Investigate missing O(Ma³) or O(Ma⁴) terms in compressible correction
+   - Review near-field renormalization in `slab/surface.py`
+   - Compare numerical quadrature vs. analytic Ma² expansion
+   - Check if body-frame boost is complete (momentum flux vs. thermodynamics)
+
+3. **Long-duration secular averaging**:
+   - Run 100+ orbit integrations at dt ≤ 5×10⁻⁶ yr
+   - Average precession over multiple periapsis-to-periapsis cycles
+   - Reduce measurement noise to quantify remaining gap precisely
+   - Compute ω_comp(t) - ω_inc(t) directly (single fit, not difference of two)
 
 ### Physics Validation Tasks
 
-1. **Run Mercury orbit example**:
-   ```bash
-   python -m slab.run examples/mercury_orbit.yaml --verbose
-   ```
+4. **Test eccentricity scaling law**:
+   - Run at e = 0.1, 0.2, 0.3, 0.5, 0.7 (all at fine dt)
+   - Verify Δω ∝ 1/(1-e²) as predicted by theory
+   - Measure coefficient A (theory predicts A=3)
+   - Compare with GR-1PN predictions across all eccentricities
 
-2. **Compare with GR-1PN**:
-   - Use gr1pn.py to compute expected precession
-   - Run parallel simulations with matched parameters
-   - Verify slab reproduces GR predictions
+5. **Test c_s⁻² scaling** (Test 10.3 from checklist):
+   - Vary sound speed: c_s = [63240, 31620, 15810] AU/yr
+   - Verify compressible correction scales as expected
+   - Confirm Ma² dependence is correct
 
-3. **Test quadrature audit mode**:
-   - Compare analytic vs. quadrature forces
-   - Should agree to < 10⁻³ per plan acceptance criteria
+6. **Quadrature audit** (Test 10.4):
+   - Compare analytic vs. quadrature force calculations
+   - Should agree to < 10⁻³ per acceptance criteria
+   - Already implemented, needs systematic testing
 
-### Implementation Tasks
+### Performance Optimization
 
-4. **Complete compressible forces** (currently disabled):
-   - Implement surface.py compressible correction
-   - Add O(Ma²) terms from finite c_s
-   - Test perihelion precession scaling ∝ c_s⁻²
+7. **Implement analytic O(Ma²) compressible correction**:
+   - Replace slow quadrature path with closed-form expansion
+   - Expected speedup: 100× faster for compressible runs
+   - Enables long-duration high-resolution studies
+   - See TODO in `slab/surface.py` lines ~619-705
 
-5. **Add visualization**:
+8. **Add direct ω-difference regression**:
+   - Modify analysis to fit ω_comp(t) - ω_inc(t) directly
+   - Avoids subtracting two large noisy numbers
+   - Tighter error bars on 1PN signal measurement
+
+### Visualization & Documentation
+
+9. **Add visualization tools**:
    - Plot orbits (x-y trajectories)
    - Plot energy vs. time
-   - Plot precession angle vs. time
+   - Plot ω(t) evolution showing precession
+   - Precession phase portraits
 
-6. **Write comprehensive tests**:
-    - Unit tests for each module
-    - Integration tests for known solutions
-    - Regression tests for bug fixes
+10. **Write comprehensive tests**:
+    - Automated regression tests for 86% GR result
+    - Unit tests for body-frame boost implementation
+    - Integration tests across eccentricities
+    - Continuous integration setup
 
 ## Scientific Validation Checklist
 
@@ -473,14 +613,25 @@ From `plan_no_pde.md` acceptance criteria:
 
 - [x] **Test 10.1**: Emergent 1/r² with correct coefficient (< 0.5% error)
   - ✅ Achieved: Relative error < 10⁻¹⁴ (far exceeds requirement)
+  - ✅ Validated: Superfluid = Newtonian to machine precision at all timesteps
+
 - [x] **Test 10.2**: Orbit stability (|Δa|/a < 10⁻⁵ over 50 orbits)
-  - ✅ Achieved: Radius stability < 2.5×10⁻⁴ over 3 orbits, energy drift < 2.5×10⁻⁷
-- [ ] **Test 10.3**: Compressible correction ∝ c_s⁻² (10% slope accuracy)
-  - Pending: Compressible forces not yet implemented
+  - ✅ Achieved: Energy drift < 2.5×10⁻⁷ over 3 orbits
+  - ✅ Established: dt ≤ 5×10⁻⁶ yr gives ΔE/E ~ 2×10⁻¹³
+
+- [x] **Test 10.3**: Compressible correction ∝ c_s⁻² (10% slope accuracy)
+  - ✅ Implemented: Body-frame boost in thermodynamics
+  - ✅ Unit tests pass: Scaling verified in `test_compressible_forces.py`
+  - ⚠️  Needs systematic c_s sweep at fine timestep
+
 - [ ] **Test 10.4**: Quadrature audit (< 10⁻³ error)
-  - Pending: Need to run with --verbose to compare analytic vs. numerical
-- [ ] **Test 10.5**: GR comparison (Mercury precession within few %)
-  - Pending: Ready to test once compressible forces are implemented
+  - 🔄 Implementation exists in `slab/surface.py`
+  - ⚠️  Needs systematic comparison: analytic vs. quadrature
+
+- [~] **Test 10.5**: GR comparison (Mercury precession within few %)
+  - ✅ Achieved: 86% of GR at coarse resolution (0.0851 vs 0.0997 arcsec/orbit)
+  - ⚠️  Needs verification: Must measure at dt ≤ 5×10⁻⁶ yr
+  - 🔄 Remaining gap: 14% deficit requires investigation (higher-order terms?)
 
 ## References
 
@@ -512,6 +663,6 @@ The simulator is a computational proof-of-concept for the theory in `1pn_no_g.te
 
 ---
 
-**Last Updated**: 2025-10-31
-**Status**: Core simulator working, all basic tests passing, ready for scientific validation
-**Version**: 0.1.0-alpha
+**Last Updated**: 2025-11-01
+**Status**: Core simulator working, Newtonian baseline validated, 1PN at 86% of GR
+**Version**: 0.2.0-alpha

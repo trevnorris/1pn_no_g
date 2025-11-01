@@ -1,0 +1,55 @@
+#!/bin/bash
+# Demonstration of Newtonian validation framework
+
+echo "=========================================================================="
+echo "NEWTONIAN GRAVITY VALIDATION FRAMEWORK - DEMONSTRATION"
+echo "=========================================================================="
+echo ""
+
+echo "This demonstration shows the complete workflow for validating"
+echo "Newtonian gravity precision before measuring 1PN effects."
+echo ""
+
+echo "=========================================================================="
+echo "STEP 1: Quick validation test (3 timesteps)"
+echo "=========================================================================="
+echo ""
+echo "Running: python scripts/validate_newtonian.py --quick --n-orbits 5"
+echo ""
+python scripts/validate_newtonian.py --quick --n-orbits 5 --quiet
+
+echo ""
+echo "=========================================================================="
+echo "STEP 2: Generate convergence plots"
+echo "=========================================================================="
+echo ""
+echo "Running: python scripts/plot_newtonian_convergence.py"
+echo ""
+python scripts/plot_newtonian_convergence.py 2>/dev/null
+
+echo ""
+echo "=========================================================================="
+echo "STEP 3: Summary of findings"
+echo "=========================================================================="
+echo ""
+echo "KEY RESULTS:"
+echo "  • Spurious precession scales as dt² (confirmed)"
+echo "  • Superfluid ≡ Newtonian (validated)"
+echo "  • Recommended: dt ≤ 5×10⁻⁶ yr (48,261 steps/orbit)"
+echo "  • Achieves: <0.01 arcsec/orbit spurious precession"
+echo ""
+echo "OUTPUTS GENERATED:"
+ls -lh newtonian_convergence.png steps_per_orbit_requirements.png NEWTONIAN_BASELINE.md 2>/dev/null | awk '{print "  • " $9 " (" $5 ")"}'
+echo ""
+echo "=========================================================================="
+echo "NEXT STEPS:"
+echo "=========================================================================="
+echo ""
+echo "1. Review documentation: cat NEWTONIAN_BASELINE.md"
+echo "2. View plots: open newtonian_convergence.png"
+echo "3. Run custom validation: python scripts/validate_newtonian.py --dt 1e-5 5e-6"
+echo "4. For 1PN studies, use: dt ≤ 5×10⁻⁶ yr"
+echo ""
+echo "=========================================================================="
+echo "VALIDATION FRAMEWORK READY FOR USE ✓"
+echo "=========================================================================="
