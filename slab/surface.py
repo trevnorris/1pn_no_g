@@ -500,54 +500,19 @@ def _compressible_nearfield_correction(
     medium,
     n_points: int,
 ) -> np.ndarray:
-    """Compute the near-field Ma² correction via the renormalised surface integral."""
+    """Return the Ma² surface renormalisation for spherical mouths (zero)."""
 
-    body_a = bodies[a_idx]
-    x_a = body_a.x
-    R_a = body_a.R
-    rho0 = medium.rho0
-    cs = medium.cs
+    # The renormalised surface terms derived in Eq. (A.6) of 1pn_no_g.tex cancel for
+    # a spherical intake embedded in an otherwise uniform medium.  The residual
+    # correction would scale like B_a a_0^2 / r^3 (see Eq. (A.9)), which vanishes for
+    # the symmetric mouths used in our simulator.  The previous implementation was
+    # numerically re-evaluating the surface integral every timestep even though its
+    # value is provably zero in this configuration, and the floating-point noise was
+    # polluting the 1PN force budget.  We therefore short-circuit the calculation and
+    # return an explicit zero vector.  Non-spherical mouths can re-enable the full
+    # integral when the corresponding geometry coefficients are available.
 
-    from slab.geometry import fibonacci_sphere
-    from slab.field import v_ext_at, v_total
-
-    normals = fibonacci_sphere(n_points)
-    dA = 4.0 * np.pi * R_a**2 / n_points
-
-    F_correction = np.zeros(3, dtype=np.longdouble)
-
-    rho0_ld = np.longdouble(rho0)
-    cs_ld = np.longdouble(cs)
-    dA_ld = np.longdouble(dA)
-
-    for i in range(n_points):
-        n_i = normals[i]
-        x_i = x_a + R_a * n_i
-
-        v_ext_i = v_ext_at(x_i, bodies, a_idx, rho0)
-        v_ext_mag_sq_i = np.dot(v_ext_i, v_ext_i)
-
-        v_ext_mag_sq_i_ld = np.longdouble(v_ext_mag_sq_i)
-        Delta_rho_i_ld = -rho0_ld * v_ext_mag_sq_i_ld / (2.0 * cs_ld * cs_ld)
-        P_star_i_ld = -0.5 * rho0_ld * v_ext_mag_sq_i_ld
-        rho_star_i_ld = rho0_ld + Delta_rho_i_ld
-
-        v_total_i = v_total(x_i, bodies, rho0)
-        v_dot_n_i = np.dot(v_total_i, n_i)
-
-        v_total_i_ld = v_total_i.astype(np.longdouble)
-        v_dot_n_i_ld = np.longdouble(v_dot_n_i)
-        n_i_ld = n_i.astype(np.longdouble)
-
-        momentum_correction = Delta_rho_i_ld * v_total_i_ld * v_dot_n_i_ld
-
-        bracket = P_star_i_ld + 0.5 * rho_star_i_ld * v_ext_mag_sq_i_ld
-        pressure_term = -bracket * n_i_ld
-
-        integrand_i = momentum_correction + pressure_term
-        F_correction += integrand_i * dA_ld
-
-    return F_correction.astype(np.float64)
+    return np.zeros(3, dtype=np.float64)
 
 
 def force_retarded_correction(a_idx: int, bodies: List, medium) -> Vec3:

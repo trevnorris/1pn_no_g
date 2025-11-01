@@ -245,16 +245,21 @@ def test_mercury_matches_eih():
     accels_eih = eih_1pn_accel(bodies, c_light=medium.cs, G_newton=medium.K)
     F_expected = bodies[1].M * accels_eih[1]
 
-    diff = np.linalg.norm(F_total - F_expected)
+    diff_total = np.linalg.norm(F_total - F_expected)
+    diff_correction = np.linalg.norm(F_comp - (F_expected - F_inc))
     print("=" * 70)
     print("TEST 6: Mercury force matches EIH 1PN")
     print("=" * 70)
-    print(f"Slab total force:      {F_total}")
-    print(f"EIH expected force:    {F_expected}")
-    print(f"Difference magnitude:  {diff:.3e}")
+    print(f"Slab total force:          {F_total}")
+    print(f"EIH expected force:        {F_expected}")
+    print(f"Total force difference:    {diff_total:.3e}")
+    print(f"Correction difference:     {diff_correction:.3e}")
 
     assert np.allclose(F_total, F_expected, rtol=1e-3, atol=1e-12), (
-        "Slab compressible correction should reproduce EIH 1PN forces"
+        "Slab total force should match EIH 1PN prediction"
+    )
+    assert np.allclose(F_comp, F_expected - F_inc, rtol=1e-3, atol=1e-12), (
+        "Compressible correction must match the EIH 1PN excess"
     )
 
     print("\n✓ Mercury 1PN force matches EIH.\n")
