@@ -27,75 +27,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
 import copy
-from slab.medium import Medium
-from slab.bodies import Body
 from slab.dynamics import integrate_orbit
-from slab.gr1pn import compute_orbit_elements
 
-
-def compute_relative_state(traj):
-    """Return relative Sun→Mercury positions and velocities."""
-
-    x_sun = traj['x'][:, 0, :]
-    x_mercury = traj['x'][:, 1, :]
-    v_sun = traj['v'][:, 0, :]
-    v_mercury = traj['v'][:, 1, :]
-
-    x_rel = x_mercury - x_sun
-    v_rel = v_mercury - v_sun
-
-    return traj['t'], x_rel, v_rel
-
-
-def analyse_precession(traj, M_total, K, T_orbit):
-    """Extract orbital elements and multiple precession estimators."""
-
-    t, x_rel, v_rel = compute_relative_state(traj)
-
-    omega = []
-    elems_list = []
-    for xr, vr in zip(x_rel, v_rel):
-        elems = compute_orbit_elements(xr, vr, M_total, K)
-        omega.append(elems['omega'])
-        elems_list.append(elems)
-
-    omega = np.array(omega)
-    omega_unwrapped = np.unwrap(omega)
-
-    # Linear trend in omega(t)
-    if len(t) > 10:
-        coeffs = np.polyfit(t, omega_unwrapped, deg=1)
-        slope_per_orbit = coeffs[0] * T_orbit
-    else:
-        slope_per_orbit = np.nan
-
-    # Periapsis-to-periapsis measurement using radial minima
-    r = np.linalg.norm(x_rel, axis=1)
-    dr = np.diff(r)
-    peri_mask = (dr[:-1] < 0) & (dr[1:] >= 0)
-    peri_indices = np.where(peri_mask)[0] + 1
-
-    if len(peri_indices) >= 2:
-        peri_omega = np.unwrap(omega[peri_indices])
-        peri_deltas = np.diff(peri_omega)
-        peri_mean = peri_deltas.mean()
-        peri_std = peri_deltas.std(ddof=1) if len(peri_deltas) > 1 else 0.0
-    else:
-        peri_mean = np.nan
-        peri_std = np.nan
-
-    result = {
-        't': t,
-        'omega': omega,
-        'omega_unwrapped': omega_unwrapped,
-        'elems': elems_list,
-        'slope_per_orbit': slope_per_orbit,
-        'peri_per_orbit': peri_mean,
-        'peri_std': peri_std,
-        'n_peri_cycles': max(0, len(peri_indices) - 1),
-    }
-
-    return result
+from scripts.precession_helpers import (
+    analyse_precession,
+    create_barycentric_mercury_config,
+)
 
 # Create Mercury configuration (barycentric initial conditions)
 rho0 = 1.0
@@ -104,42 +41,18 @@ cs = 63239.7263
 a = 0.387
 e = 0.1
 
-medium = Medium(rho0=rho0, cs=cs, beta0=beta0, gamma_beta=0.0)
-K = medium.K
-
-M_sun = 1.0
-M_mercury = 3.3e-7
-M_total = M_sun + M_mercury
-
-r_peri = a * (1 - e)
-mu = K * M_total
-v_rel_peri = np.sqrt(mu * (1 + e) / (a * (1 - e)))
-
-# Place the Sun and Mercury on opposite sides of the barycentre so that the
-# centre-of-mass remains at rest.  This avoids an artificial drift that can be
-# misinterpreted as apsidal motion when orbital elements are extracted from the
-# lab-frame trajectory.
-sun = Body(
-    name="Sun",
-    M=M_sun,
-    x=np.array([-M_mercury / M_total * r_peri, 0.0, 0.0]),
-    v=np.array([0.0, -M_mercury / M_total * v_rel_peri, 0.0]),
-    R=0.001,
-    Q=M_sun / beta0,
+medium, bodies, params = create_barycentric_mercury_config(
+    eccentricity=e,
+    rho0=rho0,
+    beta0=beta0,
+    cs=cs,
+    semi_major_axis=a,
 )
 
-mercury = Body(
-    name="Mercury",
-    M=M_mercury,
-    x=np.array([M_sun / M_total * r_peri, 0.0, 0.0]),
-    v=np.array([0.0, M_sun / M_total * v_rel_peri, 0.0]),
-    R=0.0005,
-    Q=M_mercury / beta0,
-)
-
-T_orbit = 2 * np.pi * np.sqrt(a**3 / (K * M_total))
-
-bodies = [sun, mercury]
+sun, mercury = bodies
+T_orbit = params.T_orbit
+K = params.K
+M_total = params.M_total
 
 print("=" * 70)
 print("FINAL DIAGNOSIS: COMPARING WITH vs WITHOUT COMPRESSIBLE FORCES")
@@ -181,13 +94,13 @@ opts_incomp = {
 
 traj_incomp, diag_incomp = integrate_orbit(bodies_incomp, medium, dt, n_steps, opts_incomp)
 
-analysis_incomp = analyse_precession(traj_incomp, M_total, K, T_orbit)
+analysis_incomp = analyse_precession(traj_incomp, params)
 domega_per_orbit_incomp = analysis_incomp['slope_per_orbit']
 peri_per_orbit_incomp = analysis_incomp['peri_per_orbit']
 peri_std_incomp = analysis_incomp['peri_std']
 n_peri_incomp = analysis_incomp['n_peri_cycles']
 t_incomp = analysis_incomp['t']
-elems_incomp = analysis_incomp['elems']
+elems_incomp = analysis_incomp['elements']
 
 print(f"Precession (incompressible, slope fit): {domega_per_orbit_incomp:.6e} rad/orbit")
 print(
@@ -222,13 +135,13 @@ opts_comp = {
 
 traj_comp, diag_comp = integrate_orbit(bodies_comp, medium, dt, n_steps, opts_comp)
 
-analysis_comp = analyse_precession(traj_comp, M_total, K, T_orbit)
+analysis_comp = analyse_precession(traj_comp, params)
 domega_per_orbit_comp = analysis_comp['slope_per_orbit']
 peri_per_orbit_comp = analysis_comp['peri_per_orbit']
 peri_std_comp = analysis_comp['peri_std']
 n_peri_comp = analysis_comp['n_peri_cycles']
 t_comp = analysis_comp['t']
-elems_comp = analysis_comp['elems']
+elems_comp = analysis_comp['elements']
 
 print(f"Precession (compressible, slope fit): {domega_per_orbit_comp:.6e} rad/orbit")
 print(
@@ -336,7 +249,7 @@ print(
 bodies_refined = [copy.deepcopy(sun), copy.deepcopy(mercury)]
 traj_refined, _ = integrate_orbit(bodies_refined, medium, dt_refined, n_steps_refined, opts_incomp_refined)
 
-analysis_refined = analyse_precession(traj_refined, M_total, K, T_orbit)
+analysis_refined = analyse_precession(traj_refined, params)
 domega_per_orbit_refined = analysis_refined['slope_per_orbit']
 peri_per_orbit_refined = analysis_refined['peri_per_orbit']
 peri_std_refined = analysis_refined['peri_std']
