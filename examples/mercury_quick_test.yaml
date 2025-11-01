@@ -1,0 +1,33 @@
+# Quick test for audit fix verification
+medium:
+  rho0: 1.0
+  cs: 10000.0
+  beta0: 10000000000.0
+  gamma_beta: 0.0
+
+bodies:
+  - name: Sun
+    M: 1.0
+    x: [0.0, 0.0, 0.0]
+    v: [0.0, 0.0, 0.0]
+    R: 0.001
+  - name: Mercury
+    M: 3.3e-07
+    x: [0.387, 0.0, 0.0]
+    v: [0.0, 4.5346062834869914e-11, 0.0]
+    R: 0.0005
+
+numerics:
+  dt: 0.002
+  steps: 100  # Just 100 steps for quick test
+  audit_every: 10  # Audit much more frequently
+  npts_audit: 256  # Fewer points for speed
+  use_compressible: true
+  use_flux_mass: false
+
+compare_gr_1pn:
+  enable: false  # Disable for speed
+
+outputs:
+  save_every: 50
+  write_csv: false

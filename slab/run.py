@@ -63,10 +63,9 @@ _interrupted = False
 
 
 def signal_handler(signum, frame):
-    """Handle keyboard interrupt gracefully."""
-    global _interrupted
-    _interrupted = True
-    print("\n\n🛑 Keyboard interrupt received. Saving partial results...")
+    """Handle keyboard interrupt - exit immediately."""
+    print("\n\n🛑 Keyboard interrupt received. Exiting...")
+    sys.exit(130)  # Standard exit code for SIGINT
 
 
 # ============================================================================
@@ -589,6 +588,9 @@ def save_outputs(
     def convert_numpy_types(obj):
         """Convert numpy types to native Python types for JSON serialization."""
         if isinstance(obj, np.ndarray):
+            # Handle float128 and other extended precision types
+            if obj.dtype == np.longdouble:
+                return obj.astype(np.float64).tolist()
             return obj.tolist()
         elif isinstance(obj, (np.integer, np.floating)):
             return obj.item()

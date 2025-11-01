@@ -32,6 +32,7 @@ import numpy as np
 from typing import List, Dict, Optional, Tuple
 from numpy.typing import NDArray
 import warnings
+import sys  # For checking interrupt flag
 
 from slab.bodies import Body
 from slab.medium import Medium
@@ -39,6 +40,7 @@ from slab.surface import (
     force_incompressible_analytic,
     force_incompressible_quadrature,
     compare_force_methods,
+    force_total,
 )
 from slab.field import v_ext_vectorized
 
@@ -320,11 +322,11 @@ def assemble_forces(
        Direct surface integration with Fibonacci sphere.
        Cost: O(N² * n_points), ~100× slower.
 
-    3. **Compressible analytic** (future):
+    3. **Compressible analytic** (fast):
        Adds O(Ma²) corrections from finite sound speed.
        Uses renormalized ρ*, P* to avoid self-field divergence.
 
-    4. **Compressible quadrature** (future):
+    4. **Compressible quadrature** (validation):
        Full surface integral with renormalization.
 
     Parameters
@@ -340,7 +342,7 @@ def assemble_forces(
 
         'use_compressible' : bool
             Include compressible corrections (default: False).
-            Currently not implemented; will raise NotImplementedError.
+            When True, adds O(Ma²) corrections for finite sound speed.
 
         'use_quadrature' : bool
             Use quadrature instead of analytic (default: False).
@@ -435,24 +437,18 @@ def assemble_forces(
     N = len(bodies)
     forces = np.zeros((N, 3), dtype=np.float64)
 
-    # Check for unsupported options
-    if use_compressible:
-        raise NotImplementedError(
-            "Compressible force corrections not yet implemented. "
-            "See plan_no_pde.md § 4 for the renormalization scheme."
+    # Compute forces using the unified force_total interface
+    # This handles all four combinations:
+    # - Incompressible/compressible × Analytic/quadrature
+    for i in range(N):
+        forces[i] = force_total(
+            a_idx=i,
+            bodies=bodies,
+            medium=medium,
+            use_compressible=use_compressible,
+            use_quadrature=use_quadrature,
+            n_points=n_points,
         )
-
-    # Choose force calculation method
-    if use_quadrature:
-        # Quadrature path: direct surface integration (slow, audit only)
-        for i in range(N):
-            forces[i] = force_incompressible_quadrature(
-                i, bodies, medium, n_points
-            )
-    else:
-        # Analytic path: closed-form formula (fast, default)
-        for i in range(N):
-            forces[i] = force_incompressible_analytic(i, bodies, medium)
 
     return forces
 
@@ -711,9 +707,19 @@ def integrate_orbit(
 
     save_idx = 1
 
+    # Helper to check for interrupt
+    def check_interrupt():
+        run_module = sys.modules.get('slab.run')
+        if run_module and hasattr(run_module, '_interrupted') and run_module._interrupted:
+            print(f"\n⚠️  Integration interrupted. Exiting...")
+            sys.exit(130)  # Standard exit code for Ctrl+C
+
     # Main integration loop
     for step in range(1, n_steps + 1):
         t = step * dt
+
+        # Check for keyboard interrupt
+        check_interrupt()
 
         # Run audit if requested
         if audit_every > 0 and step % audit_every == 0:
@@ -727,16 +733,25 @@ def integrate_orbit(
         # Perform integration step
         diag = step_verlet(bodies, medium, dt, opts)
 
+        # Check for interrupt after integration step
+        check_interrupt()
+
         # Run quadrature audit separately if needed
         if run_audit:
             audit_results = perform_audit(bodies, medium, opts, audit_tolerance, verbose=False)
             diag['audit'] = audit_results
 
-            # Check for audit failures
+            # Check for interrupt after audit (audits can take a while)
+            check_interrupt()
+
+            # Report audit results (both passes and failures)
             for body_audit in audit_results:
-                if not body_audit['passes']:
-                    body_name = bodies[body_audit['body_idx']].name
-                    rel_err = body_audit['rel_error']
+                body_name = bodies[body_audit['body_idx']].name
+                rel_err = body_audit['rel_error']
+                if body_audit['passes']:
+                    print(f"✓ Audit PASSED at step {step} for body '{body_name}': "
+                          f"relative error {rel_err:.3e} < tolerance {audit_tolerance:.3e}")
+                else:
                     warnings.warn(
                         f"Audit FAILED at step {step} for body '{body_name}': "
                         f"relative error {rel_err:.3e} > tolerance {audit_tolerance:.3e}",
@@ -1024,11 +1039,16 @@ def perform_audit(
         opts = {}
 
     n_points = opts.get('n_points', 512)
+    use_compressible = opts.get('use_compressible', False)
 
     audit_results = []
 
     for i, body in enumerate(bodies):
-        result = compare_force_methods(i, bodies, medium, n_points, verbose=verbose)
+        result = compare_force_methods(
+            i, bodies, medium, n_points,
+            use_compressible=use_compressible,
+            verbose=verbose
+        )
         result['body_idx'] = i
         result['body_name'] = body.name
 

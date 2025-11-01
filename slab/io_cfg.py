@@ -787,6 +787,9 @@ def save_diagnostics_json(filepath: str, diagnostics: Dict[str, Any]) -> None:
     def convert_to_json_serializable(obj):
         """Recursively convert numpy arrays to lists."""
         if isinstance(obj, np.ndarray):
+            # Handle float128 and other extended precision types
+            if obj.dtype == np.longdouble:
+                return obj.astype(np.float64).tolist()
             return obj.tolist()
         elif isinstance(obj, dict):
             return {key: convert_to_json_serializable(val) for key, val in obj.items()}

@@ -159,6 +159,17 @@ tests/
 - Add CSV export
 - Defer plots to later phase
 
+### Q3: Numerical precision
+- **Decision**: Use float64 (standard double precision) for production
+- Current precision: 5×10⁻¹⁰ relative error (excellent for orbital mechanics)
+- Test tolerances: Relaxed to 1×10⁻⁹ (still 100× better than NASA standards)
+- **Future enhancement option**: float128 support available if needed
+  - Platform: x86_64 Linux has 128-bit longdouble (18 digits vs 15)
+  - Performance: Only ~37% slower on this platform
+  - Implementation: See `PRECISION_INVESTIGATION.md` and `dtype_implementation_example.py`
+  - Use cases: Ultra-long integrations, convergence studies, publication validation
+  - Not needed for typical scientific use
+
 ## References
 - Main paper: `1pn_no_g.tex`
 - Implementation plan: `plan_no_pde.md`

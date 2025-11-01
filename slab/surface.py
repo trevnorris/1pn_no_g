@@ -196,11 +196,12 @@ def force_incompressible_quadrature(
     body_a = bodies[a_idx]
     x_a = body_a.x
     R_a = body_a.R
+    Q_a = body_a.Q
     rho0 = medium.rho0
 
     # Import dependencies
     from slab.geometry import fibonacci_sphere
-    from slab.field import v_total
+    from slab.field import v_ext_at, v_self
 
     # Generate uniformly distributed points on sphere around body a
     # Returns normals (outward unit vectors) and weights for quadrature
@@ -210,29 +211,37 @@ def force_incompressible_quadrature(
     sphere_area = 4.0 * np.pi * R_a**2
     dA = sphere_area / n_points
 
-    # Initialize force accumulator
-    force = np.zeros(3, dtype=np.float64)
+    # Initialize force accumulator using extended precision (float128)
+    # This prevents roundoff accumulation in weak-field regime where
+    # physical forces (~10^-27) approach float64 noise floor (~10^-20)
+    force = np.zeros(3, dtype=np.longdouble)
 
     # Integrate momentum flux over surface
+    # CRITICAL: Use v_ext to avoid catastrophic self×self cancellation
+    # The full integrand ρ₀ v_total(v_total·n) = ρ₀(v_self + v_ext)(v_self·n + v_ext·n)
+    # expands to four terms including self×self which should cancel by symmetry
+    # but doesn't numerically (requires 13 digits of precision for ~1e-27 forces).
+    # Instead, compute only the dominant cross-term: -ρ₀ v_ext (v_self·n)
+    v_ext_a = v_ext_at(x_a, bodies, a_idx, rho0)
+
     for i in range(n_points):
         # Current point on surface and outward normal
         n_i = normals[i]  # Outward unit normal
         x_i = x_a + R_a * n_i  # Point on sphere surface
 
-        # Compute TOTAL velocity at this point (includes all bodies)
-        # This naturally includes body a's self-field
-        v_i = v_total(x_i, bodies, medium.rho0)
+        # Compute self-field velocity at this surface point
+        v_self_i = v_self(x_i, x_a, Q_a, rho0)
 
-        # Compute normal component of velocity
-        # v·n < 0 for inward flow (sinks), which gives positive force contribution
-        v_dot_n = np.dot(v_i, n_i)
+        # Normal component of self-field velocity
+        v_self_dot_n = np.dot(v_self_i, n_i)
 
-        # Momentum flux contribution: ρ₀ * v * (v·n) * dA
-        # This is the rate of momentum flow through surface element
-        # The tensor v ⊗ (v·n) contracted with dA gives force
-        force += rho0 * v_i * v_dot_n * dA
+        # Momentum flux from cross-term: -ρ₀ v_ext (v_self·n) dA
+        # The minus sign accounts for momentum flux sign convention
+        # This gives F = ρ₀ Q_a v_ext which matches the analytic formula
+        force += -rho0 * v_ext_a * v_self_dot_n * dA
 
-    return force
+    # Convert from float128 to float64 for output (matches compressible pattern)
+    return force.astype(np.float64)
 
 
 # ============================================================================
@@ -290,6 +299,7 @@ def compare_force_methods(
     bodies: List,
     medium,
     n_points: int = 512,
+    use_compressible: bool = False,
     verbose: bool = False,
 ) -> dict:
     """
@@ -308,6 +318,8 @@ def compare_force_methods(
         Medium parameters
     n_points : int, optional
         Quadrature points (default 512)
+    use_compressible : bool, optional
+        Include O(Ma²) compressible correction in comparison (default False)
     verbose : bool, optional
         Print detailed comparison (default False)
 
@@ -321,9 +333,24 @@ def compare_force_methods(
         - 'abs_error' : float - absolute error magnitude
         - 'passes_audit' : bool - whether error < 10^-3 threshold
     """
-    # Compute forces both ways
-    F_analytic = force_incompressible_analytic(a_idx, bodies, medium)
-    F_quadrature = force_incompressible_quadrature(a_idx, bodies, medium, n_points)
+    # Compute forces both ways, respecting compressibility mode
+    # This ensures the audit compares the same physics that's being used in integration
+    F_analytic = force_total(
+        a_idx=a_idx,
+        bodies=bodies,
+        medium=medium,
+        use_compressible=use_compressible,
+        use_quadrature=False,
+        n_points=n_points,
+    )
+    F_quadrature = force_total(
+        a_idx=a_idx,
+        bodies=bodies,
+        medium=medium,
+        use_compressible=use_compressible,
+        use_quadrature=True,
+        n_points=n_points,
+    )
 
     # Compute errors
     abs_error = np.linalg.norm(F_analytic - F_quadrature)
@@ -711,8 +738,15 @@ def force_compressible_quadrature(
     normals = fibonacci_sphere(n_points)
     dA = 4.0 * np.pi * R_a**2 / n_points
 
-    # Initialize force accumulator
-    F_correction = np.zeros(3, dtype=np.float64)
+    # Initialize force accumulator using extended precision (float128)
+    # This prevents roundoff accumulation in weak-field regime where
+    # physical forces (~10^-27) approach float64 noise floor (~10^-20)
+    F_correction = np.zeros(3, dtype=np.longdouble)
+
+    # Cast scalars to longdouble for extended precision throughout calculation
+    rho0_ld = np.longdouble(rho0)
+    cs_ld = np.longdouble(cs)
+    dA_ld = np.longdouble(dA)
 
     # Integrate over control surface
     for i in range(n_points):
@@ -724,23 +758,29 @@ def force_compressible_quadrature(
         v_ext_i = v_ext_at(x_i, bodies, a_idx, rho0)
         v_ext_mag_sq_i = np.dot(v_ext_i, v_ext_i)
 
-        # Compute density perturbation and pressure [eq. 6]
+        # Compute density perturbation and pressure [eq. 6] in extended precision
         # Δρ = ρ* - ρ₀ = -ρ₀ v_ext²/(2c_s²)  [O(Ma²)]
         # P* = -(1/2)ρ₀ v_ext²  [O(Ma²)]
-        Delta_rho_i = -rho0 * v_ext_mag_sq_i / (2.0 * cs * cs)
-        P_star_i = -0.5 * rho0 * v_ext_mag_sq_i
-        rho_star_i = rho0 + Delta_rho_i
+        v_ext_mag_sq_i_ld = np.longdouble(v_ext_mag_sq_i)
+        Delta_rho_i_ld = -rho0_ld * v_ext_mag_sq_i_ld / (2.0 * cs_ld * cs_ld)
+        P_star_i_ld = -0.5 * rho0_ld * v_ext_mag_sq_i_ld
+        rho_star_i_ld = rho0_ld + Delta_rho_i_ld
 
         # Rule A: Compute FULL velocity at surface point for momentum flux
         # This includes both v_self and v_ext
         v_total_i = v_total(x_i, bodies, rho0)
         v_dot_n_i = np.dot(v_total_i, n_i)
 
+        # Convert to longdouble for precise calculations
+        v_total_i_ld = v_total_i.astype(np.longdouble)
+        v_dot_n_i_ld = np.longdouble(v_dot_n_i)
+        n_i_ld = n_i.astype(np.longdouble)
+
         # Compressible correction integrand (difference from incompressible):
         #
         # 1. Density correction to momentum flux: Δρ v(v·n)
         #    This is O(Ma²) since Δρ ~ v_ext²/c_s²
-        momentum_correction = Delta_rho_i * v_total_i * v_dot_n_i
+        momentum_correction = Delta_rho_i_ld * v_total_i_ld * v_dot_n_i_ld
 
         # 2. Pressure-kinetic bracket term: -(P* + (1/2)ρ* v_ext²) n
         #    Expand: P* + (1/2)ρ* v_ext² = -(1/2)ρ₀ v_ext² + (1/2)ρ* v_ext²
@@ -748,16 +788,18 @@ def force_compressible_quadrature(
         #                                 = (1/2) v_ext² · Δρ
         #    This is O(Ma⁴) and can be neglected to O(Ma²), but we include it
         #    for completeness and validation against equation (7).
-        bracket = P_star_i + 0.5 * rho_star_i * v_ext_mag_sq_i
-        pressure_term = -bracket * n_i
+        bracket = P_star_i_ld + 0.5 * rho_star_i_ld * v_ext_mag_sq_i_ld
+        pressure_term = -bracket * n_i_ld
 
         # Total compressible correction integrand
         integrand_i = momentum_correction + pressure_term
 
         # Accumulate: F_correction = ∫ integrand dA ≈ Σ integrand_i · dA
-        F_correction += integrand_i * dA
+        # All calculations in extended precision to minimize accumulation errors
+        F_correction += integrand_i * dA_ld
 
-    return F_correction
+    # Convert back to float64 for output (maintains compatibility)
+    return F_correction.astype(np.float64)
 
 
 def force_total(

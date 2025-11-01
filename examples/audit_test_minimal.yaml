@@ -1,0 +1,31 @@
+# Minimal test just for audit verification
+medium:
+  rho0: 1.0
+  cs: 10000.0
+  beta0: 10000000000.0
+
+bodies:
+  - name: Sun
+    M: 1.0
+    x: [0.0, 0.0, 0.0]
+    v: [0.0, 0.0, 0.0]
+    R: 0.001
+  - name: Mercury
+    M: 3.3e-07
+    x: [0.387, 0.0, 0.0]
+    v: [0.0, 4.5346062834869914e-11, 0.0]
+    R: 0.0005
+
+numerics:
+  dt: 0.01
+  steps: 20  # Just 20 steps
+  audit_every: 5  # Audit 4 times
+  npts_audit: 128  # Few points for speed
+  use_compressible: true
+
+compare_gr_1pn:
+  enable: false
+
+outputs:
+  save_every: 20
+  write_csv: false
