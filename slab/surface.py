@@ -479,154 +479,139 @@ def decompose_momentum_integrand(
 # ============================================================================
 
 
+def _medium_orbital_constant(medium) -> float:
+    """Return the orbital constant K = rho0/(4π beta0²) for a medium-like object."""
+
+    if hasattr(medium, "K"):
+        return medium.K
+
+    rho0 = getattr(medium, "rho0", None)
+    beta0 = getattr(medium, "beta0", None)
+    if rho0 is None or beta0 is None:
+        raise AttributeError(
+            "Medium object must provide either a 'K' attribute or both 'rho0' and 'beta0'"
+        )
+    return rho0 / (4.0 * np.pi * beta0**2)
+
+
+def _compressible_nearfield_correction(
+    a_idx: int,
+    bodies: List,
+    medium,
+    n_points: int,
+) -> np.ndarray:
+    """Compute the near-field Ma² correction via the renormalised surface integral."""
+
+    body_a = bodies[a_idx]
+    x_a = body_a.x
+    R_a = body_a.R
+    rho0 = medium.rho0
+    cs = medium.cs
+
+    from slab.geometry import fibonacci_sphere
+    from slab.field import v_ext_at, v_total
+
+    normals = fibonacci_sphere(n_points)
+    dA = 4.0 * np.pi * R_a**2 / n_points
+
+    F_correction = np.zeros(3, dtype=np.longdouble)
+
+    rho0_ld = np.longdouble(rho0)
+    cs_ld = np.longdouble(cs)
+    dA_ld = np.longdouble(dA)
+
+    for i in range(n_points):
+        n_i = normals[i]
+        x_i = x_a + R_a * n_i
+
+        v_ext_i = v_ext_at(x_i, bodies, a_idx, rho0)
+        v_ext_mag_sq_i = np.dot(v_ext_i, v_ext_i)
+
+        v_ext_mag_sq_i_ld = np.longdouble(v_ext_mag_sq_i)
+        Delta_rho_i_ld = -rho0_ld * v_ext_mag_sq_i_ld / (2.0 * cs_ld * cs_ld)
+        P_star_i_ld = -0.5 * rho0_ld * v_ext_mag_sq_i_ld
+        rho_star_i_ld = rho0_ld + Delta_rho_i_ld
+
+        v_total_i = v_total(x_i, bodies, rho0)
+        v_dot_n_i = np.dot(v_total_i, n_i)
+
+        v_total_i_ld = v_total_i.astype(np.longdouble)
+        v_dot_n_i_ld = np.longdouble(v_dot_n_i)
+        n_i_ld = n_i.astype(np.longdouble)
+
+        momentum_correction = Delta_rho_i_ld * v_total_i_ld * v_dot_n_i_ld
+
+        bracket = P_star_i_ld + 0.5 * rho_star_i_ld * v_ext_mag_sq_i_ld
+        pressure_term = -bracket * n_i_ld
+
+        integrand_i = momentum_correction + pressure_term
+        F_correction += integrand_i * dA_ld
+
+    return F_correction.astype(np.float64)
+
+
+def force_retarded_correction(a_idx: int, bodies: List, medium) -> Vec3:
+    """Compute the finite-sound-speed retardation/convective correction (O(v²/c_s²))."""
+
+    body_a = bodies[a_idx]
+    v_a = body_a.v
+    M_a = body_a.M
+    cs = medium.cs
+    K = _medium_orbital_constant(medium)
+
+    correction = np.zeros(3, dtype=np.float64)
+
+    for j, body_b in enumerate(bodies):
+        if j == a_idx:
+            continue
+
+        r_vec = body_b.x - body_a.x
+        r = np.linalg.norm(r_vec)
+        if r == 0.0:
+            raise ValueError(
+                f"Bodies '{body_a}' and '{body_b}' share a position; retarded correction diverges."
+            )
+
+        n = r_vec / r
+        v_b = body_b.v
+
+        v_a_sq = np.dot(v_a, v_a)
+        v_b_sq = np.dot(v_b, v_b)
+        v_a_dot_v_b = np.dot(v_a, v_b)
+        n_dot_v_a = np.dot(n, v_a)
+        n_dot_v_b = np.dot(n, v_b)
+
+        prefactor = K * body_b.M / (r * r)
+
+        gamma = (
+            4.0 * K * body_a.M / r
+            + 4.0 * K * body_b.M / r
+            - v_a_sq
+            - 2.0 * v_b_sq
+            + 4.0 * v_a_dot_v_b
+            + 1.5 * (n_dot_v_b ** 2)
+        )
+        a_radial = (prefactor / (cs * cs)) * gamma * n
+
+        velocity_coeff = 4.0 * n_dot_v_a - 3.0 * n_dot_v_b
+        a_velocity = (prefactor / (cs * cs)) * velocity_coeff * (v_a - v_b)
+
+        correction += M_a * (a_radial + a_velocity)
+
+    return correction
+
+
 def force_compressible_analytic(
     a_idx: int,
     bodies: List,
     medium,
     n_points: int = 512,
 ) -> Vec3:
-    """
-    Compute O(Ma²) compressible correction to incompressible force (analytic path).
+    """Compute O(Ma²) compressible correction (near-field + retardation)."""
 
-    This implements the finite sound speed correction from plan_no_pde.md § 4,
-    equations (6) and (7). The correction arises from density/pressure variations
-    in the near field and scales as v²/c_s² ~ Ma².
-
-    Physics (CRITICAL RENORMALIZATION):
-    ------------------------------------
-    From plan_no_pde.md § 4, we use NEAR-FIELD RENORMALIZATION to avoid
-    self-field blowup:
-
-    **Rule A (momentum term):** Use FULL velocity v in ρ* v(v·n)
-        - This contains the v_self × v_ext cross-term that generates force
-        - Physical momentum flux requires the actual velocity
-
-    **Rule B (thermodynamic terms):** Use v_ext ONLY in ρ* and P*
-        - ρ* = ρ₀(1 - v_ext²/(2c_s²))  [eq. 6]
-        - P* = c_s²(ρ* - ρ₀) = -(1/2)ρ₀ v_ext²  [eq. 6]
-        - This PREVENTS self-field divergence (v_self ~ 1/R² blowup)
-        - Implements the standard throat counterterm
-
-    Master equation [eq. 7]:
-    -------------------------
-        F_a^(comp) = ∫[ρ* v(v·n) - (P* + (1/2)ρ* v_ext²) n] dA
-
-    where the integral is over control surface ∂B_a of radius R_a.
-
-    Expected behavior:
-    ------------------
-    - Correction vanishes as c_s → ∞ (incompressible limit)
-    - Correction scales as ~ v_ext²/c_s² ~ Ma²
-    - Correction is SMALL compared to incompressible force
-    - Adds velocity-dependent terms → perihelion precession
-
-    Implementation strategy:
-    ------------------------
-    This analytic version expands to O(Ma²) and evaluates using sphere
-    identities from plan_no_pde.md eq. (3):
-
-        ∫ n dA = 0
-        ∫ (n·A) n dA = (4πR²/3) A
-
-    We decompose v = v_self + v_ext on the control surface and use the
-    identities to evaluate each term analytically.
-
-    Parameters:
-    -----------
-    a_idx : int
-        Index of body for which to compute correction
-    bodies : List[Body]
-        All bodies (need positions, velocities, Q values)
-    medium : Medium
-        Must have attributes:
-        - rho0 : ambient density [kg/m³]
-        - cs : sound speed [m/s]
-    n_points : int, optional
-        Number of quadrature points (default 512)
-        Used for fallback quadrature path if analytic fails
-
-    Returns:
-    --------
-    F_correction : ndarray, shape (3,)
-        Compressible correction force vector [N]
-        Add to incompressible force for total: F_total = F_inc + F_comp
-
-    Notes:
-    ------
-    - For c_s → ∞, this should return ~0
-    - Typical magnitude: |F_comp| ~ (v²/c_s²) |F_inc| ~ Ma² |F_inc|
-    - This is the FAST PATH for routine integration
-    - Use force_compressible_quadrature() for audit/validation
-
-    Acceptance criteria (plan § 10.3):
-    -----------------------------------
-    - Correction finite and bounded
-    - Scales as ~ c_s^(-2) when c_s varied
-    - Produces perihelion precession in eccentric orbits
-
-    See Also:
-    ---------
-    force_compressible_quadrature : Audit path via direct integration
-    force_total : Convenience wrapper for total force calculation
-    """
-    # Get parameters
-    body_a = bodies[a_idx]
-    x_a = body_a.x
-    R_a = body_a.R
-    Q_a = body_a.Q
-    rho0 = medium.rho0
-    cs = medium.cs
-
-    # Import field functions
-    from slab.field import v_ext_at, v_total
-
-    # Compute external velocity at body center (used for ρ*, P*)
-    # Rule B: use v_ext ONLY for thermodynamic quantities
-    v_ext_center = v_ext_at(x_a, bodies, a_idx, rho0)
-    v_ext_mag_sq = np.dot(v_ext_center, v_ext_center)
-
-    # Compute renormalized density and pressure [eq. 6]
-    # ρ* = ρ₀(1 - v_ext²/(2c_s²))
-    # P* = c_s²(ρ* - ρ₀) = -(1/2)ρ₀ v_ext²
-    rho_star = rho0 * (1.0 - v_ext_mag_sq / (2.0 * cs * cs))
-    P_star = -0.5 * rho0 * v_ext_mag_sq
-
-    # For analytic evaluation, we expand the integral [eq. 7] to O(Ma²)
-    # The leading-order compressible correction comes from the difference
-    # between ρ* and ρ₀ in the momentum term, plus the pressure term.
-    #
-    # Following the same angular averaging procedure as for incompressible:
-    #
-    # Δρ = ρ* - ρ₀ = -ρ₀ v_ext²/(2c_s²)
-    #
-    # The correction to momentum flux:
-    #   ΔF_momentum = ∫ Δρ v(v·n) dA
-    #               = ∫ (-ρ₀ v_ext²/(2c_s²)) v(v·n) dA
-    #
-    # Expanding v = v_self + v_ext and keeping leading terms ~ v_ext² gives
-    # a correction that's O(v_ext³) when integrated (v_self is odd in n).
-    #
-    # The dominant O(Ma²) correction comes from the pressure-kinetic bracket:
-    #   F_pressure = -∫ (P* + (1/2)ρ* v_ext²) n dA
-    #              = -∫ (-(1/2)ρ₀ v_ext² + (1/2)ρ* v_ext²) n dA
-    #              = -(1/2) v_ext² ∫ (ρ* - ρ₀) n dA
-    #              = -(1/2) v_ext² · (-ρ₀ v_ext²/(2c_s²)) ∫ n dA
-    #              = 0  [by ∫ n dA = 0]
-    #
-    # So the analytic formula requires more careful expansion. The force arises
-    # from spatial variation of v_ext over the control surface.
-    #
-    # For simplicity and robustness, we use QUADRATURE for the compressible
-    # correction (it's already O(Ma²) small, so cost is acceptable).
-    # The "analytic" path here actually calls the quadrature implementation.
-    #
-    # TODO: Implement true analytic O(Ma²) expansion for ~100× speedup
-    # For now, this is the validated reference path.
-
-    # Use quadrature path (validated implementation)
-    F_correction = force_compressible_quadrature(a_idx, bodies, medium, n_points)
-
-    return F_correction
+    nearfield = _compressible_nearfield_correction(a_idx, bodies, medium, n_points)
+    retarded = force_retarded_correction(a_idx, bodies, medium)
+    return nearfield + retarded
 
 
 def force_compressible_quadrature(
@@ -722,83 +707,9 @@ def force_compressible_quadrature(
     force_compressible_analytic : Fast analytic path (uses this as reference)
     force_total : Convenience wrapper for total force
     """
-    # Get body parameters
-    body_a = bodies[a_idx]
-    x_a = body_a.x
-    R_a = body_a.R
-    rho0 = medium.rho0
-    cs = medium.cs
-
-    # Import dependencies
-    from slab.geometry import fibonacci_sphere
-    from slab.field import v_total, v_ext_at
-
-    # Generate quadrature points
-    normals = fibonacci_sphere(n_points)
-    dA = 4.0 * np.pi * R_a**2 / n_points
-
-    # Initialize force accumulator using extended precision (float128)
-    # This prevents roundoff accumulation in weak-field regime where
-    # physical forces (~10^-27) approach float64 noise floor (~10^-20)
-    F_correction = np.zeros(3, dtype=np.longdouble)
-
-    # Cast scalars to longdouble for extended precision throughout calculation
-    rho0_ld = np.longdouble(rho0)
-    cs_ld = np.longdouble(cs)
-    dA_ld = np.longdouble(dA)
-
-    # Integrate over control surface
-    for i in range(n_points):
-        n_i = normals[i]
-        x_i = x_a + R_a * n_i  # Point on sphere surface
-
-        # Rule B: Compute v_ext at surface point for thermodynamic quantities
-        # This prevents self-field blowup in ρ* and P*
-        v_ext_i = v_ext_at(x_i, bodies, a_idx, rho0)
-        v_ext_mag_sq_i = np.dot(v_ext_i, v_ext_i)
-
-        # Compute density perturbation and pressure [eq. 6] in extended precision
-        # Δρ = ρ* - ρ₀ = -ρ₀ v_ext²/(2c_s²)  [O(Ma²)]
-        # P* = -(1/2)ρ₀ v_ext²  [O(Ma²)]
-        v_ext_mag_sq_i_ld = np.longdouble(v_ext_mag_sq_i)
-        Delta_rho_i_ld = -rho0_ld * v_ext_mag_sq_i_ld / (2.0 * cs_ld * cs_ld)
-        P_star_i_ld = -0.5 * rho0_ld * v_ext_mag_sq_i_ld
-        rho_star_i_ld = rho0_ld + Delta_rho_i_ld
-
-        # Rule A: Compute FULL velocity at surface point for momentum flux
-        # This includes both v_self and v_ext (LAB FRAME - no boost!)
-        v_total_i = v_total(x_i, bodies, rho0)
-        v_dot_n_i = np.dot(v_total_i, n_i)
-
-        # Convert to longdouble for precise calculations
-        v_total_i_ld = v_total_i.astype(np.longdouble)
-        v_dot_n_i_ld = np.longdouble(v_dot_n_i)
-        n_i_ld = n_i.astype(np.longdouble)
-
-        # Compressible correction integrand (difference from incompressible):
-        #
-        # 1. Density correction to momentum flux: Δρ v(v·n)
-        #    This is O(Ma²) since Δρ ~ v_ext²/c_s²
-        momentum_correction = Delta_rho_i_ld * v_total_i_ld * v_dot_n_i_ld
-
-        # 2. Pressure-kinetic bracket term: -(P* + (1/2)ρ* v_ext²) n
-        #    Expand: P* + (1/2)ρ* v_ext² = -(1/2)ρ₀ v_ext² + (1/2)ρ* v_ext²
-        #                                 = (1/2) v_ext² (ρ* - ρ₀)
-        #                                 = (1/2) v_ext² · Δρ
-        #    This is O(Ma⁴) and can be neglected to O(Ma²), but we include it
-        #    for completeness and validation against equation (7).
-        bracket = P_star_i_ld + 0.5 * rho_star_i_ld * v_ext_mag_sq_i_ld
-        pressure_term = -bracket * n_i_ld
-
-        # Total compressible correction integrand
-        integrand_i = momentum_correction + pressure_term
-
-        # Accumulate: F_correction = ∫ integrand dA ≈ Σ integrand_i · dA
-        # All calculations in extended precision to minimize accumulation errors
-        F_correction += integrand_i * dA_ld
-
-    # Convert back to float64 for output (maintains compatibility)
-    return F_correction.astype(np.float64)
+    nearfield = _compressible_nearfield_correction(a_idx, bodies, medium, n_points)
+    retarded = force_retarded_correction(a_idx, bodies, medium)
+    return nearfield + retarded
 
 
 def force_total(

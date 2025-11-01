@@ -27,41 +27,32 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
 import copy
-from slab.medium import Medium
-from slab.bodies import Body
 from slab.dynamics import integrate_orbit
-from slab.gr1pn import compute_orbit_elements
 
-# Create Mercury configuration
+from scripts.precession_helpers import (
+    analyse_precession,
+    create_barycentric_mercury_config,
+)
+
+# Create Mercury configuration (barycentric initial conditions)
 rho0 = 1.0
 beta0 = 0.045
 cs = 63239.7263
 a = 0.387
 e = 0.1
 
-medium = Medium(rho0=rho0, cs=cs, beta0=beta0, gamma_beta=0.0)
-K = medium.K
-
-M_sun = 1.0
-M_mercury = 3.3e-7
-
-r_peri = a * (1 - e)
-v_peri = np.sqrt(K * M_sun * (1 + e) / (a * (1 - e)))
-T_orbit = 2 * np.pi * np.sqrt(a**3 / (K * M_sun))
-
-sun = Body(
-    name="Sun", M=M_sun, x=np.array([0.0, 0.0, 0.0]),
-    v=np.array([0.0, 0.0, 0.0]), R=0.001, Q=M_sun / beta0,
+medium, bodies, params = create_barycentric_mercury_config(
+    eccentricity=e,
+    rho0=rho0,
+    beta0=beta0,
+    cs=cs,
+    semi_major_axis=a,
 )
 
-mercury = Body(
-    name="Mercury", M=M_mercury,
-    x=np.array([r_peri, 0.0, 0.0]),
-    v=np.array([0.0, v_peri, 0.0]),
-    R=0.0005, Q=M_mercury / beta0,
-)
-
-bodies = [sun, mercury]
+sun, mercury = bodies
+T_orbit = params.T_orbit
+K = params.K
+M_total = params.M_total
 
 print("=" * 70)
 print("FINAL DIAGNOSIS: COMPARING WITH vs WITHOUT COMPRESSIBLE FORCES")
@@ -73,13 +64,18 @@ print(f"  T_orbit = {T_orbit:.4f} yr")
 print(f"  cs = {cs:.4f} AU/yr")
 print()
 
-# Integration parameters
+# Integration parameters matching the production runs.  These are intentionally
+# coarse so we can reproduce the large apparent precession that motivated this
+# investigation, then quantify the discretisation error by re-running with a
+# finer timestep below.
 n_steps = 1000
 dt = 0.002
 total_time = n_steps * dt
 n_orbits = total_time / T_orbit
+steps_per_orbit = T_orbit / dt
 
 print(f"Integration: {n_steps} steps × {dt} yr = {total_time} yr ~ {n_orbits:.1f} orbits")
+print(f"Steps per orbit ≈ {steps_per_orbit:.1f}")
 print()
 
 # Run WITHOUT compressible forces
@@ -92,35 +88,34 @@ bodies_incomp = [copy.deepcopy(sun), copy.deepcopy(mercury)]
 opts_incomp = {
     'use_compressible': False,
     'use_quadrature': False,
-    'save_every': 100,
+    'save_every': max(1, n_steps // 2000),
     'verbose': False,
 }
 
 traj_incomp, diag_incomp = integrate_orbit(bodies_incomp, medium, dt, n_steps, opts_incomp)
 
-# Extract Mercury's trajectory
-t_incomp = traj_incomp['t']
-x_incomp = traj_incomp['x'][:, 1, :]
-v_incomp = traj_incomp['v'][:, 1, :]
+analysis_incomp = analyse_precession(traj_incomp, params)
+domega_per_orbit_incomp = analysis_incomp['slope_per_orbit']
+peri_per_orbit_incomp = analysis_incomp['peri_per_orbit']
+peri_std_incomp = analysis_incomp['peri_std']
+n_peri_incomp = analysis_incomp['n_peri_cycles']
+t_incomp = analysis_incomp['t']
+elems_incomp = analysis_incomp['elements']
 
-# Compute omega
-omega_incomp = []
-for i in range(len(t_incomp)):
-    elems = compute_orbit_elements(x_incomp[i], v_incomp[i], M_sun, K)
-    omega_incomp.append(elems['omega'])
-
-omega_incomp = np.array(omega_incomp)
-omega_incomp_unwrapped = np.unwrap(omega_incomp)
-
-if len(t_incomp) > 10:
-    coeffs = np.polyfit(t_incomp, omega_incomp_unwrapped, deg=1)
-    domega_dt_incomp = coeffs[0]
-    domega_per_orbit_incomp = domega_dt_incomp * T_orbit
-else:
-    domega_per_orbit_incomp = np.nan
-
-print(f"Precession (incompressible): {domega_per_orbit_incomp:.6e} rad/orbit")
-print(f"                           = {domega_per_orbit_incomp * 206265:.6e} arcsec/orbit")
+print(f"Precession (incompressible, slope fit): {domega_per_orbit_incomp:.6e} rad/orbit")
+print(
+    f"                                      = {domega_per_orbit_incomp * 206265:.6e} arcsec/orbit"
+)
+if np.isfinite(peri_per_orbit_incomp):
+    err_arcsec = peri_std_incomp * 206265.0
+    print(
+        f"Periapsis-to-periapsis: {peri_per_orbit_incomp:.6e} rad/orbit"
+        f" ± {peri_std_incomp:.2e} (n = {n_peri_incomp})"
+    )
+    print(
+        f"                       = {peri_per_orbit_incomp * 206265:.6e} arcsec/orbit"
+        f" ± {err_arcsec:.2e}"
+    )
 print()
 
 # Run WITH compressible forces
@@ -133,52 +128,75 @@ bodies_comp = [copy.deepcopy(sun), copy.deepcopy(mercury)]
 opts_comp = {
     'use_compressible': True,
     'use_quadrature': False,
-    'save_every': 100,
+    'save_every': max(1, n_steps // 2000),
     'verbose': False,
+    'n_points': 128,
 }
 
 traj_comp, diag_comp = integrate_orbit(bodies_comp, medium, dt, n_steps, opts_comp)
 
-# Extract Mercury's trajectory
-t_comp = traj_comp['t']
-x_comp = traj_comp['x'][:, 1, :]
-v_comp = traj_comp['v'][:, 1, :]
+analysis_comp = analyse_precession(traj_comp, params)
+domega_per_orbit_comp = analysis_comp['slope_per_orbit']
+peri_per_orbit_comp = analysis_comp['peri_per_orbit']
+peri_std_comp = analysis_comp['peri_std']
+n_peri_comp = analysis_comp['n_peri_cycles']
+t_comp = analysis_comp['t']
+elems_comp = analysis_comp['elements']
 
-# Compute omega
-omega_comp = []
-for i in range(len(t_comp)):
-    elems = compute_orbit_elements(x_comp[i], v_comp[i], M_sun, K)
-    omega_comp.append(elems['omega'])
-
-omega_comp = np.array(omega_comp)
-omega_comp_unwrapped = np.unwrap(omega_comp)
-
-if len(t_comp) > 10:
-    coeffs = np.polyfit(t_comp, omega_comp_unwrapped, deg=1)
-    domega_dt_comp = coeffs[0]
-    domega_per_orbit_comp = domega_dt_comp * T_orbit
-else:
-    domega_per_orbit_comp = np.nan
-
-print(f"Precession (compressible): {domega_per_orbit_comp:.6e} rad/orbit")
-print(f"                         = {domega_per_orbit_comp * 206265:.6e} arcsec/orbit")
+print(f"Precession (compressible, slope fit): {domega_per_orbit_comp:.6e} rad/orbit")
+print(
+    f"                                   = {domega_per_orbit_comp * 206265:.6e} arcsec/orbit"
+)
+if np.isfinite(peri_per_orbit_comp):
+    err_arcsec = peri_std_comp * 206265.0
+    print(
+        f"Periapsis-to-periapsis: {peri_per_orbit_comp:.6e} rad/orbit"
+        f" ± {peri_std_comp:.2e} (n = {n_peri_comp})"
+    )
+    print(
+        f"                       = {peri_per_orbit_comp * 206265:.6e} arcsec/orbit"
+        f" ± {err_arcsec:.2e}"
+    )
 print()
 
 # GR prediction
-GR_precession = (6 * np.pi * K * M_sun) / (a * cs**2 * (1 - e**2))
+GR_precession = (6 * np.pi * K * M_total) / (a * cs**2 * (1 - e**2))
 print(f"GR prediction: {GR_precession:.6e} rad/orbit")
 print(f"             = {GR_precession * 206265:.6e} arcsec/orbit")
 print()
 
 # Difference between compressible and incompressible
-delta_precession = domega_per_orbit_comp - domega_per_orbit_incomp
+delta_precession_slope = domega_per_orbit_comp - domega_per_orbit_incomp
+if np.isfinite(peri_per_orbit_comp) and np.isfinite(peri_per_orbit_incomp):
+    delta_precession_peri = peri_per_orbit_comp - peri_per_orbit_incomp
+else:
+    delta_precession_peri = np.nan
 print("=" * 70)
 print("ANALYSIS")
 print("=" * 70)
 print()
 
-print(f"Precession difference (comp - incomp): {delta_precession:.6e} rad/orbit")
-print(f"                                     = {delta_precession * 206265:.6e} arcsec/orbit")
+print(
+    f"Precession difference (slope fit): {delta_precession_slope:.6e} rad/orbit"
+)
+print(
+    f"                                   = {delta_precession_slope * 206265:.6e} arcsec/orbit"
+)
+if GR_precession != 0:
+    print(
+        f"                                   ≈ {delta_precession_slope / GR_precession:.2f} × GR"
+    )
+if np.isfinite(delta_precession_peri):
+    print(
+        f"Periapsis-to-periapsis difference: {delta_precession_peri:.6e} rad/orbit"
+    )
+    print(
+        f"                                   = {delta_precession_peri * 206265:.6e} arcsec/orbit"
+    )
+    if GR_precession != 0:
+        print(
+            f"                                   ≈ {delta_precession_peri / GR_precession:.2f} × GR"
+        )
 print()
 
 if np.isfinite(domega_per_orbit_incomp) and abs(domega_per_orbit_incomp) > 1e-3:
@@ -193,9 +211,12 @@ if np.isfinite(domega_per_orbit_incomp) and abs(domega_per_orbit_incomp) > 1e-3:
     print("  4. Apsidal precession from non-Keplerian forces")
     print()
     print("The compressible correction is:")
-    print(f"  Δ(Δω) = {delta_precession:.6e} rad/orbit")
-    print(f"        = {delta_precession * 206265:.6e} arcsec/orbit")
-    if abs(delta_precession) < abs(domega_per_orbit_incomp) * 0.1:
+    print(f"  Δ(Δω)_slope = {delta_precession_slope:.6e} rad/orbit")
+    print(f"             = {delta_precession_slope * 206265:.6e} arcsec/orbit")
+    if np.isfinite(delta_precession_peri):
+        print(f"  Δ(Δω)_peri  = {delta_precession_peri:.6e} rad/orbit")
+        print(f"             = {delta_precession_peri * 206265:.6e} arcsec/orbit")
+    if abs(delta_precession_slope) < abs(domega_per_orbit_incomp) * 0.1:
         print("  This is SMALL compared to the incompressible precession.")
         print("  So the compressible force is NOT the main issue!")
 else:
@@ -209,6 +230,62 @@ else:
 
 print()
 print("=" * 70)
+print("TIMESTEP CONVERGENCE CHECK (incompressible)")
+print("=" * 70)
+print()
+
+refinement_factor = 40
+dt_refined = dt / refinement_factor
+n_steps_refined = n_steps * refinement_factor
+opts_incomp_refined = opts_incomp.copy()
+opts_incomp_refined['save_every'] = max(1, n_steps_refined // 200)
+
+print(
+    "Refining timestep by ×{:.0f}: dt = {:.3e} yr, steps per orbit ≈ {:.0f}".format(
+        refinement_factor, dt_refined, steps_per_orbit * refinement_factor
+    )
+)
+
+bodies_refined = [copy.deepcopy(sun), copy.deepcopy(mercury)]
+traj_refined, _ = integrate_orbit(bodies_refined, medium, dt_refined, n_steps_refined, opts_incomp_refined)
+
+analysis_refined = analyse_precession(traj_refined, params)
+domega_per_orbit_refined = analysis_refined['slope_per_orbit']
+peri_per_orbit_refined = analysis_refined['peri_per_orbit']
+peri_std_refined = analysis_refined['peri_std']
+n_peri_refined = analysis_refined['n_peri_cycles']
+
+print(
+    f"Refined precession (incompressible, slope fit): {domega_per_orbit_refined:.6e} rad/orbit"
+)
+print(
+    f"                                           = {domega_per_orbit_refined * 206265:.6e} arcsec/orbit"
+)
+if np.isfinite(peri_per_orbit_refined):
+    err_arcsec = peri_std_refined * 206265.0
+    print(
+        f"Periapsis-to-periapsis: {peri_per_orbit_refined:.6e} rad/orbit"
+        f" ± {peri_std_refined:.2e} (n = {n_peri_refined})"
+    )
+    print(
+        f"                       = {peri_per_orbit_refined * 206265:.6e} arcsec/orbit"
+        f" ± {err_arcsec:.2e}"
+    )
+if domega_per_orbit_refined != 0:
+    ratio = abs(domega_per_orbit_incomp / domega_per_orbit_refined)
+else:
+    ratio = np.inf
+print(f"Ratio coarse/refined ≈ {ratio:.1f}")
+if (
+    np.isfinite(peri_per_orbit_incomp)
+    and np.isfinite(peri_per_orbit_refined)
+    and peri_per_orbit_refined != 0
+):
+    ratio_peri = abs(peri_per_orbit_incomp / peri_per_orbit_refined)
+    print(f"Ratio coarse/refined (peri) ≈ {ratio_peri:.1f}")
+print()
+
+print("=" * 70)
 print("ORBIT ELEMENT EVOLUTION")
 print("=" * 70)
 print()
@@ -219,5 +296,5 @@ if len(t_comp) > 5:
     print(f"{'Time [yr]':<12} {'a [AU]':<12} {'e':<12} {'omega [deg]':<12}")
     print("-" * 48)
     for i in [0, len(t_comp)//4, len(t_comp)//2, 3*len(t_comp)//4, -1]:
-        elems = compute_orbit_elements(x_comp[i], v_comp[i], M_sun, K)
+        elems = elems_comp[i]
         print(f"{t_comp[i]:<12.4f} {elems['a']:<12.6f} {elems['e']:<12.6f} {np.degrees(elems['omega']):<12.2f}")
