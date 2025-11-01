@@ -5,7 +5,7 @@ Simple tests for velocity field calculations (no pytest required).
 import numpy as np
 from types import SimpleNamespace
 import sys
-sys.path.insert(0, '/var/projects/papers/1pn_no_g')
+sys.path.insert(0, '/var/projects/1pn_no_g')
 
 from slab.field import (
     v_self,

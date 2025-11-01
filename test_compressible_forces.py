@@ -14,7 +14,7 @@ import sys
 from types import SimpleNamespace
 
 # Add slab to path
-sys.path.insert(0, '/var/projects/papers/1pn_no_g')
+sys.path.insert(0, '/var/projects/1pn_no_g')
 
 from slab.surface import (
     force_incompressible_analytic,
