@@ -238,7 +238,7 @@ def eih_1pn_accel(
             v_j = bodies[j].v
 
             # Separation vector: r_ij = x_i - x_j  (from j to i)
-            r_ij_vec = x_i - x_j
+            r_ij_vec = x_j - x_i
             r_ij = np.linalg.norm(r_ij_vec)
 
             if r_ij == 0:

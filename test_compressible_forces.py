@@ -22,6 +22,8 @@ from slab.surface import (
     force_compressible_quadrature,
     force_total
 )
+from scripts.precession_helpers import create_barycentric_mercury_config
+from slab.gr1pn import eih_1pn_accel
 
 
 def create_test_bodies():
@@ -231,6 +233,33 @@ def test_body_velocity_independence():
     print("\n✓ Galilean invariance confirmed!\n")
 
 
+def test_mercury_matches_eih():
+    """Total slab force (inc + comp) should match EIH 1PN prediction."""
+
+    medium, bodies, params = create_barycentric_mercury_config(eccentricity=0.1)
+
+    F_inc = force_incompressible_analytic(1, bodies, medium)
+    F_comp = force_compressible_quadrature(1, bodies, medium, n_points=256)
+    F_total = F_inc + F_comp
+
+    accels_eih = eih_1pn_accel(bodies, c_light=medium.cs, G_newton=medium.K)
+    F_expected = bodies[1].M * accels_eih[1]
+
+    diff = np.linalg.norm(F_total - F_expected)
+    print("=" * 70)
+    print("TEST 6: Mercury force matches EIH 1PN")
+    print("=" * 70)
+    print(f"Slab total force:      {F_total}")
+    print(f"EIH expected force:    {F_expected}")
+    print(f"Difference magnitude:  {diff:.3e}")
+
+    assert np.allclose(F_total, F_expected, rtol=1e-3, atol=1e-12), (
+        "Slab compressible correction should reproduce EIH 1PN forces"
+    )
+
+    print("\n✓ Mercury 1PN force matches EIH.\n")
+
+
 def main():
     """Run all tests."""
     print("\n" + "=" * 70)
@@ -243,6 +272,7 @@ def main():
         test_cs_scaling()
         test_magnitude_check()
         test_body_velocity_independence()
+        test_mercury_matches_eih()
 
         print("=" * 70)
         print("ALL TESTS PASSED!")
