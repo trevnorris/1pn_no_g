@@ -223,8 +223,16 @@ def run_eccentricity_sweep(
 
     # Medium parameters (same for all runs)
     rho0 = 1.0
-    beta0 = 1e10
-    cs = 1e4  # Sound speed: controls 1PN corrections
+    # beta0 = 0.045 gives K ≈ 39.4 AU³/(M_sun yr²), matching realistic solar system
+    # dynamics where Mercury's orbital period is ~0.24 years (not billions of years).
+    # This enables precession measurement over reasonable integration times.
+    beta0 = 0.045
+
+    # cs = speed of light in AU/yr for proper 1PN comparison with GR
+    # c = 299792 km/s = 63239.7263 AU/yr
+    # In the slab model, cs (sound speed in the superfluid) plays the role of c (speed of light)
+    # For the model to reproduce GR 1PN effects, we set cs = c.
+    cs = 63239.7263  # Speed of light [AU/yr], for GR 1PN validation
 
     # For GR comparison, we need to map K → G and cs → c
     # We'll use the fact that K = rho0/(4*pi*beta0^2)
