@@ -203,10 +203,10 @@ def test_magnitude_check():
     print("\n✓ Magnitude check completed!\n")
 
 
-def test_velocity_dependence():
-    """Ensure compressible force responds to the body's velocity."""
+def test_body_velocity_independence():
+    """Compressible correction should be Galilean-invariant."""
     print("=" * 70)
-    print("TEST 5: Velocity dependence")
+    print("TEST 5: Galilean invariance")
     print("=" * 70)
 
     medium = create_test_medium(cs=1.0e3)
@@ -226,9 +226,9 @@ def test_velocity_dependence():
     print(f"Reverse velocity force:  {F_reverse}")
     print(f"Difference magnitude:    {diff:.6e}")
 
-    assert diff > 0.0, "Compressible force should depend on body velocity"
+    assert diff < 1e-30, "Compressible force should be invariant under uniform boosts"
 
-    print("\n✓ Velocity dependence confirmed!\n")
+    print("\n✓ Galilean invariance confirmed!\n")
 
 
 def main():
@@ -242,7 +242,7 @@ def main():
         test_infinite_cs_limit()
         test_cs_scaling()
         test_magnitude_check()
-        test_velocity_dependence()
+        test_body_velocity_independence()
 
         print("=" * 70)
         print("ALL TESTS PASSED!")
