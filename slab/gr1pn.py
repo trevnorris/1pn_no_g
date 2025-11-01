@@ -238,7 +238,7 @@ def eih_1pn_accel(
             v_j = bodies[j].v
 
             # Separation vector: r_ij = x_i - x_j  (from j to i)
-            r_ij_vec = x_i - x_j
+            r_ij_vec = x_j - x_i
             r_ij = np.linalg.norm(r_ij_vec)
 
             if r_ij == 0:
@@ -546,22 +546,34 @@ def compute_orbit_elements(
     n_vec = np.cross(z_hat, h_vec)
     n_mag = np.linalg.norm(n_vec)
 
+    # Numerical tolerances for degenerate configurations
+    tol = 1e-12
+    inclination_tol = 1e-8  # radians; treat orbits as equatorial below this
+
     # Longitude of ascending node: Omega
-    if n_mag > 0:
+    if n_mag > tol and i >= inclination_tol:
         Omega = np.arctan2(n_vec[1], n_vec[0])
         if Omega < 0:
             Omega += 2 * np.pi
     else:
-        Omega = 0.0  # Undefined for equatorial orbits
+        # Equatorial orbit: node vector vanishes (undefined Omega)
+        Omega = 0.0
 
     # Argument of periapsis: omega
-    if n_mag > 0 and e > 0:
-        omega_cos = np.dot(n_vec, e_vec) / (n_mag * e)
-        omega = np.arccos(np.clip(omega_cos, -1.0, 1.0))
-        if e_vec[2] < 0:  # Check z-component of e_vec
-            omega = 2 * np.pi - omega
+    if e > tol:
+        if n_mag > tol and h_mag > tol and i >= inclination_tol:
+            # Robust formulation using atan2 to select correct quadrant
+            sin_omega = np.dot(np.cross(n_vec, e_vec), h_vec) / (n_mag * h_mag * e)
+            cos_omega = np.dot(n_vec, e_vec) / (n_mag * e)
+            omega = np.arctan2(sin_omega, cos_omega)
+        else:
+            # Equatorial orbit: measure periapsis directly from eccentricity vector
+            omega = np.arctan2(e_vec[1], e_vec[0])
+
+        if omega < 0:
+            omega += 2 * np.pi
     else:
-        omega = 0.0  # Undefined for circular or equatorial orbits
+        omega = 0.0  # Circular orbit: periapsis undefined
 
     # True anomaly: f
     if e > 0:

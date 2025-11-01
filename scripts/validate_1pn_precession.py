@@ -39,105 +39,52 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
-import matplotlib.pyplot as plt
 from typing import List, Dict, Tuple
 import argparse
 import copy
 
-from slab.medium import Medium
-from slab.bodies import Body
-from slab.dynamics import integrate_orbit, estimate_orbital_period
-from slab.gr1pn import compute_orbit_elements
+try:
+    import matplotlib.pyplot as plt
+except ImportError:  # pragma: no cover - matplotlib optional for headless debug runs
+    plt = None
+
+from scripts.precession_helpers import (
+    analyse_precession,
+    create_barycentric_mercury_config,
+)
+from slab.dynamics import integrate_orbit
 
 
 def create_mercury_config(
     eccentricity: float,
     rho0: float = 1.0,
-    beta0: float = 1e10,
-    cs: float = 1e4,
+    beta0: float = 0.045,
+    cs: float = 63239.7263,
     semi_major_axis: float = 0.387,
-) -> Tuple[Medium, List[Body], Dict]:
-    """
-    Create a Mercury-like orbit configuration with specified eccentricity.
+) -> Tuple[object, List[object], Dict]:
+    """Compatibility wrapper that forwards to ``create_barycentric_mercury_config``."""
 
-    Parameters
-    ----------
-    eccentricity : float
-        Orbital eccentricity (0 = circular, <1 = elliptical)
-    rho0 : float
-        Ambient density [code units]
-    beta0 : float
-        Mass-intake factor [code units]
-    cs : float
-        Sound speed [AU/yr], controls 1PN-like corrections
-    semi_major_axis : float
-        Semi-major axis [AU]
-
-    Returns
-    -------
-    medium : Medium
-        Medium object
-    bodies : List[Body]
-        Two bodies: Sun and Mercury
-    params : Dict
-        Orbital parameters (a, e, v_perihelion, etc.)
-    """
-    # Masses (code units: M_sun = 1, M_mercury = 3.3e-7)
-    M_sun = 1.0
-    M_mercury = 3.3e-7
-
-    # Create medium
-    medium = Medium(rho0=rho0, cs=cs, beta0=beta0, gamma_beta=0.0)
-
-    # For a given semi-major axis a and eccentricity e,
-    # the perihelion distance is: r_peri = a(1-e)
-    # and the orbital speed at perihelion is: v_peri = sqrt(K*M*(1+e)/(a(1-e)))
-    # where K is the "gravitational constant" analog
-
-    K = medium.K
-    a = semi_major_axis
-    e = eccentricity
-
-    # Perihelion distance and velocity
-    r_peri = a * (1 - e)
-    v_peri = np.sqrt(K * M_sun * (1 + e) / (a * (1 - e)))
-
-    # Place Sun at origin
-    sun = Body(
-        name="Sun",
-        M=M_sun,
-        x=np.array([0.0, 0.0, 0.0]),
-        v=np.array([0.0, 0.0, 0.0]),
-        R=0.001,  # Control surface radius
-        Q=M_sun / beta0,
+    medium, bodies, params = create_barycentric_mercury_config(
+        eccentricity=eccentricity,
+        rho0=rho0,
+        beta0=beta0,
+        cs=cs,
+        semi_major_axis=semi_major_axis,
     )
 
-    # Place Mercury at perihelion (along +x axis) with velocity in +y direction
-    mercury = Body(
-        name="Mercury",
-        M=M_mercury,
-        x=np.array([r_peri, 0.0, 0.0]),
-        v=np.array([0.0, v_peri, 0.0]),
-        R=0.0005,
-        Q=M_mercury / beta0,
-    )
-
-    bodies = [sun, mercury]
-
-    # Compute orbital period using Kepler's 3rd law: T = 2π sqrt(a³/(K*M))
-    T_orbit = 2 * np.pi * np.sqrt(a**3 / (K * M_sun))
-
-    params = {
-        'a': a,
-        'e': e,
-        'r_peri': r_peri,
-        'r_apo': a * (1 + e),
-        'v_peri': v_peri,
-        'T_orbit': T_orbit,
-        'K': K,
+    params_dict = {
+        "a": params.a,
+        "e": params.e,
+        "r_peri": params.r_peri,
+        "r_apo": params.r_apo,
+        "v_peri": params.v_rel_peri,
+        "T_orbit": params.T_orbit,
+        "K": params.K,
+        "M_total": params.M_total,
+        "_params_obj": params,
     }
 
-    return medium, bodies, params
+    return medium, bodies, params_dict
 
 
 def gr_1pn_precession(
@@ -234,13 +181,10 @@ def run_eccentricity_sweep(
     # For the model to reproduce GR 1PN effects, we set cs = c.
     cs = 63239.7263  # Speed of light [AU/yr], for GR 1PN validation
 
-    # For GR comparison, we need to map K → G and cs → c
-    # We'll use the fact that K = rho0/(4*pi*beta0^2)
-    medium_ref = Medium(rho0=rho0, cs=cs, beta0=beta0, gamma_beta=0.0)
-    K = medium_ref.K
-
-    # For GR, use K as "effective G" and cs as "effective c"
-    G_eff = K
+    # For GR, use the slab's orbital constant K as the effective Newtonian G and
+    # cs as the effective speed of light.  We will read K from the generated
+    # configuration to keep the mapping consistent even if rho0/beta0 change.
+    G_eff = None
     c_eff = cs
 
     # Semi-major axis (same for all runs, for fair comparison)
@@ -269,24 +213,32 @@ def run_eccentricity_sweep(
             semi_major_axis=a,
         )
 
+        params_obj = params["_params_obj"]
+
+        if G_eff is None:
+            G_eff = params_obj.K
+
+        steps_per_orbit = params_obj.T_orbit / dt
+
         if verbose:
             print(f"    a = {params['a']:.4f} AU, e = {params['e']:.3f}")
             print(f"    r_peri = {params['r_peri']:.4f} AU, r_apo = {params['r_apo']:.4f} AU")
             print(f"    v_peri = {params['v_peri']:.6e} AU/yr")
             print(f"    T_orbit = {params['T_orbit']:.4f} yr")
             print(f"    Expected n_orbits = {n_steps * dt / params['T_orbit']:.1f}")
+            print(f"    Steps per orbit ≈ {steps_per_orbit:.1f}")
 
         # Integration options
         opts = {
             'use_compressible': use_compressible,
             'use_flux_mass': False,
             'flux_every': 1000,
-            'save_every': 100,
+            'save_every': max(1, n_steps // 5000),
             'audit_every': 0,  # Disable audits for speed
             'audit_tolerance': 1e-3,
             'n_points': n_points,
             'verbose': False,
-            'progress_every': n_steps // 10,
+            'progress_every': max(1, n_steps // 10),
         }
 
         # Run simulation
@@ -295,39 +247,16 @@ def run_eccentricity_sweep(
             bodies_copy, medium, dt, n_steps, opts
         )
 
-        # Compute precession from trajectory by tracking argument of periapsis
-        # Extract Mercury's trajectory (index 1)
-        t_traj = trajectory['t']
-        x_merc = trajectory['x'][:, 1, :]  # Mercury positions
-        v_merc = trajectory['v'][:, 1, :]  # Mercury velocities
-
-        # Compute osculating omega (argument of periapsis) at each time
-        omega_list = []
-        for i in range(len(t_traj)):
-            elems = compute_orbit_elements(x_merc[i], v_merc[i], bodies[0].M, K)
-            omega_list.append(elems['omega'])
-
-        omega = np.array(omega_list)
-
-        # Unwrap 2π discontinuities
-        omega_unwrapped = np.unwrap(omega)
-
-        # Fit linear trend: omega(t) = omega_0 + (dω/dt) * t
-        if len(t_traj) > 10:
-            coeffs = np.polyfit(t_traj, omega_unwrapped, deg=1)
-            domega_dt = coeffs[0]  # radians per unit time
-
-            # Compute precession per orbit
-            T_orbit = params['T_orbit']
-            domega_per_orbit_slab = domega_dt * T_orbit
-            n_orbits = (t_traj[-1] - t_traj[0]) / T_orbit
-        else:
-            domega_per_orbit_slab = np.nan
-            n_orbits = 0
+        analysis = analyse_precession(trajectory, params_obj)
+        domega_per_orbit_slab = analysis['slope_per_orbit']
+        peri_per_orbit_slab = analysis['peri_per_orbit']
+        peri_std_slab = analysis['peri_std']
+        n_peri_cycles = analysis['n_peri_cycles']
+        t_traj = analysis['t']
+        n_orbits = (t_traj[-1] - t_traj[0]) / params_obj.T_orbit if len(t_traj) > 1 else 0.0
 
         # Compute GR theoretical prediction
-        M_sun = bodies[0].M
-        domega_per_orbit_gr = gr_1pn_precession(M_sun, a, ecc, G_eff, c_eff)
+        domega_per_orbit_gr = gr_1pn_precession(params_obj.M_total, a, ecc, G_eff, c_eff)
 
         # Store results
         results['eccentricities'].append(ecc)
@@ -336,9 +265,21 @@ def run_eccentricity_sweep(
         results['a'].append(a)
         results['params'].append(params)
         results['n_orbits'].append(n_orbits)
+        results.setdefault('peri_precession', []).append(peri_per_orbit_slab)
+        results.setdefault('peri_std', []).append(peri_std_slab)
+        results.setdefault('n_peri_cycles', []).append(n_peri_cycles)
+        results.setdefault('steps_per_orbit', []).append(steps_per_orbit)
 
         if verbose:
             print(f"    Precession (slab): {domega_per_orbit_slab:.6e} rad/orbit")
+            if np.isfinite(peri_per_orbit_slab):
+                print(
+                    "    Peri-to-peri:      {:.6e} ± {:.2e} rad/orbit (n = {})".format(
+                        peri_per_orbit_slab,
+                        peri_std_slab if np.isfinite(peri_std_slab) else float('nan'),
+                        n_peri_cycles,
+                    )
+                )
             print(f"    Precession (GR):   {domega_per_orbit_gr:.6e} rad/orbit")
             if np.isfinite(domega_per_orbit_slab) and domega_per_orbit_gr != 0:
                 ratio = domega_per_orbit_slab / domega_per_orbit_gr
@@ -363,6 +304,9 @@ def plot_precession_validation(
     output_path : str
         Path to save plot
     """
+    if plt is None:
+        raise RuntimeError("matplotlib is required to generate plots")
+
     eccentricities = np.array(results['eccentricities'])
     precession_slab = np.array(results['precession_slab'])
     precession_gr = np.array(results['precession_gr'])
@@ -510,6 +454,12 @@ def main():
         help="Disable compressible forces (should give zero precession)",
     )
     parser.add_argument(
+        "--n-points",
+        type=int,
+        default=128,
+        help="Quadrature points for compressible forces (default: 128)",
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default="output/1pn_precession_validation.png",
@@ -531,6 +481,7 @@ def main():
         eccentricities=args.eccentricities,
         n_steps=args.steps,
         dt=args.dt,
+        n_points=args.n_points,
         use_compressible=not args.no_compressible,
         verbose=True,
     )
@@ -540,25 +491,60 @@ def main():
     print("SUMMARY")
     print("=" * 70)
     print()
-    print(f"{'Eccentricity':<15} {'Δω_slab [arcsec]':<20} {'Δω_GR [arcsec]':<20} {'Ratio':<10} {'Error':<10}")
-    print("-" * 75)
+    header = (
+        f"{'e':<6} {'Δω_slope [arcsec]':<20} {'Δω_peri [arcsec]':<20} "
+        f"{'Δω_GR [arcsec]':<18} {'ratio':<10} {'steps/orbit':<14} {'orbits':<8}"
+    )
+    print(header)
+    print("-" * len(header))
 
     eccentricities = results['eccentricities']
     precession_slab = results['precession_slab']
+    precession_peri = results.get('peri_precession', [np.nan] * len(eccentricities))
+    peri_std = results.get('peri_std', [np.nan] * len(eccentricities))
     precession_gr = results['precession_gr']
+    steps_per_orbit = results.get('steps_per_orbit', [np.nan] * len(eccentricities))
+    n_orbits = results.get('n_orbits', [np.nan] * len(eccentricities))
 
-    for e, p_slab, p_gr in zip(eccentricities, precession_slab, precession_gr):
+    for e, p_slab, p_peri, p_std, p_gr, spo, norb in zip(
+        eccentricities,
+        precession_slab,
+        precession_peri,
+        peri_std,
+        precession_gr,
+        steps_per_orbit,
+        n_orbits,
+    ):
         p_slab_arcsec = p_slab * 206265
         p_gr_arcsec = p_gr * 206265
+        if np.isfinite(p_peri):
+            peri_arcsec = p_peri * 206265
+            if np.isfinite(p_std) and p_std > 0:
+                peri_text = f"{peri_arcsec:.4e} ± {p_std * 206265:.2e}"
+            else:
+                peri_text = f"{peri_arcsec:.4e}"
+        else:
+            peri_text = "nan"
         ratio = p_slab / p_gr if p_gr != 0 else np.nan
-        error = abs(ratio - 1.0) * 100 if np.isfinite(ratio) else np.nan
-
         print(
-            f"{e:<15.3f} {p_slab_arcsec:<20.4e} {p_gr_arcsec:<20.4e} "
-            f"{ratio:<10.4f} {error:<10.2f}%"
+            f"{e:<6.3f} "
+            f"{p_slab_arcsec:<20.4e} "
+            f"{peri_text:<20} "
+            f"{p_gr_arcsec:<18.4e} "
+            f"{ratio:<10.4f} "
+            f"{spo:<14.1f} "
+            f"{norb:<8.2f}"
         )
 
     print()
+
+    spo_array = np.array(steps_per_orbit, dtype=float)
+    if np.any(spo_array < 1000):
+        print(
+            "⚠ Coarse timestep: <1000 steps per orbit in some runs. Increase --steps"
+            " or decrease --dt (aim for ≥4000) before trusting the ratios."
+        )
+        print()
 
     # Assess results
     ratios = np.array(precession_slab) / np.array(precession_gr)
@@ -584,8 +570,12 @@ def main():
 
     print()
 
-    # Create plot
-    plot_precession_validation(results, args.output)
+    # Create plot if matplotlib is available
+    if args.output:
+        if plt is None:
+            print("⚠ matplotlib not available; skipping plot output.")
+        else:
+            plot_precession_validation(results, args.output)
 
     return 0
 

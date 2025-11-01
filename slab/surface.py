@@ -747,6 +747,11 @@ def force_compressible_quadrature(
     cs_ld = np.longdouble(cs)
     dA_ld = np.longdouble(dA)
 
+    # Body velocity for Galilean boost to co-moving frame
+    # The control surface co-moves with body a, so all velocities must be
+    # measured relative to the body's instantaneous rest frame
+    v_body = np.asarray(body_a.v, dtype=np.float64)
+
     # Integrate over control surface
     for i in range(n_points):
         n_i = normals[i]
@@ -755,18 +760,23 @@ def force_compressible_quadrature(
         # Rule B: Compute v_ext at surface point for thermodynamic quantities
         # This prevents self-field blowup in ρ* and P*
         v_ext_i = v_ext_at(x_i, bodies, a_idx, rho0)
-        v_ext_mag_sq_i = np.dot(v_ext_i, v_ext_i)
+
+        # Boost to body rest frame for thermodynamics
+        # This introduces critical v·v_body cross-terms that drive 1PN precession
+        v_rel_i = v_ext_i - v_body  # SUBTRACT to boost to body rest frame
+        v_rel_mag_sq_i = np.dot(v_rel_i, v_rel_i)
 
         # Compute density perturbation and pressure [eq. 6] in extended precision
-        # Δρ = ρ* - ρ₀ = -ρ₀ v_ext²/(2c_s²)  [O(Ma²)]
-        # P* = -(1/2)ρ₀ v_ext²  [O(Ma²)]
-        v_ext_mag_sq_i_ld = np.longdouble(v_ext_mag_sq_i)
-        Delta_rho_i_ld = -rho0_ld * v_ext_mag_sq_i_ld / (2.0 * cs_ld * cs_ld)
-        P_star_i_ld = -0.5 * rho0_ld * v_ext_mag_sq_i_ld
+        # Δρ = ρ* - ρ₀ = -ρ₀ v_rel²/(2c_s²)  [O(Ma²)] - now in body frame!
+        # P* = -(1/2)ρ₀ v_rel²  [O(Ma²)] - now in body frame!
+        v_rel_mag_sq_i_ld = np.longdouble(v_rel_mag_sq_i)
+        Delta_rho_i_ld = -rho0_ld * v_rel_mag_sq_i_ld / (2.0 * cs_ld * cs_ld)
+        P_star_i_ld = -0.5 * rho0_ld * v_rel_mag_sq_i_ld
         rho_star_i_ld = rho0_ld + Delta_rho_i_ld
 
         # Rule A: Compute FULL velocity at surface point for momentum flux
         # This includes both v_self and v_ext (LAB FRAME - no boost!)
+        # The momentum flux term must remain in lab frame for correct force calculation
         v_total_i = v_total(x_i, bodies, rho0)
         v_dot_n_i = np.dot(v_total_i, n_i)
 
@@ -781,13 +791,13 @@ def force_compressible_quadrature(
         #    This is O(Ma²) since Δρ ~ v_ext²/c_s²
         momentum_correction = Delta_rho_i_ld * v_total_i_ld * v_dot_n_i_ld
 
-        # 2. Pressure-kinetic bracket term: -(P* + (1/2)ρ* v_ext²) n
-        #    Expand: P* + (1/2)ρ* v_ext² = -(1/2)ρ₀ v_ext² + (1/2)ρ* v_ext²
-        #                                 = (1/2) v_ext² (ρ* - ρ₀)
-        #                                 = (1/2) v_ext² · Δρ
+        # 2. Pressure-kinetic bracket term: -(P* + (1/2)ρ* v_rel²) n
+        #    Expand: P* + (1/2)ρ* v_rel² = -(1/2)ρ₀ v_rel² + (1/2)ρ* v_rel²
+        #                                 = (1/2) v_rel² (ρ* - ρ₀)
+        #                                 = (1/2) v_rel² · Δρ
         #    This is O(Ma⁴) and can be neglected to O(Ma²), but we include it
         #    for completeness and validation against equation (7).
-        bracket = P_star_i_ld + 0.5 * rho_star_i_ld * v_ext_mag_sq_i_ld
+        bracket = P_star_i_ld + 0.5 * rho_star_i_ld * v_rel_mag_sq_i_ld
         pressure_term = -bracket * n_i_ld
 
         # Total compressible correction integrand
