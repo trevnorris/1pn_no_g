@@ -33,25 +33,69 @@ from slab.dynamics import integrate_orbit
 from slab.gr1pn import compute_orbit_elements
 
 
-def relative_orbit_series(traj, M_total, K):
-    """Return times, periapsis angles, and orbital elements for the relative orbit."""
+def compute_relative_state(traj):
+    """Return relative Sun→Mercury positions and velocities."""
 
-    t = traj['t']
     x_sun = traj['x'][:, 0, :]
     x_mercury = traj['x'][:, 1, :]
     v_sun = traj['v'][:, 0, :]
     v_mercury = traj['v'][:, 1, :]
 
+    x_rel = x_mercury - x_sun
+    v_rel = v_mercury - v_sun
+
+    return traj['t'], x_rel, v_rel
+
+
+def analyse_precession(traj, M_total, K, T_orbit):
+    """Extract orbital elements and multiple precession estimators."""
+
+    t, x_rel, v_rel = compute_relative_state(traj)
+
     omega = []
     elems_list = []
-    for xs, xm, vs, vm in zip(x_sun, x_mercury, v_sun, v_mercury):
-        x_rel = xm - xs
-        v_rel = vm - vs
-        elems = compute_orbit_elements(x_rel, v_rel, M_total, K)
+    for xr, vr in zip(x_rel, v_rel):
+        elems = compute_orbit_elements(xr, vr, M_total, K)
         omega.append(elems['omega'])
         elems_list.append(elems)
 
-    return t, np.array(omega), elems_list
+    omega = np.array(omega)
+    omega_unwrapped = np.unwrap(omega)
+
+    # Linear trend in omega(t)
+    if len(t) > 10:
+        coeffs = np.polyfit(t, omega_unwrapped, deg=1)
+        slope_per_orbit = coeffs[0] * T_orbit
+    else:
+        slope_per_orbit = np.nan
+
+    # Periapsis-to-periapsis measurement using radial minima
+    r = np.linalg.norm(x_rel, axis=1)
+    dr = np.diff(r)
+    peri_mask = (dr[:-1] < 0) & (dr[1:] >= 0)
+    peri_indices = np.where(peri_mask)[0] + 1
+
+    if len(peri_indices) >= 2:
+        peri_omega = np.unwrap(omega[peri_indices])
+        peri_deltas = np.diff(peri_omega)
+        peri_mean = peri_deltas.mean()
+        peri_std = peri_deltas.std(ddof=1) if len(peri_deltas) > 1 else 0.0
+    else:
+        peri_mean = np.nan
+        peri_std = np.nan
+
+    result = {
+        't': t,
+        'omega': omega,
+        'omega_unwrapped': omega_unwrapped,
+        'elems': elems_list,
+        'slope_per_orbit': slope_per_orbit,
+        'peri_per_orbit': peri_mean,
+        'peri_std': peri_std,
+        'n_peri_cycles': max(0, len(peri_indices) - 1),
+    }
+
+    return result
 
 # Create Mercury configuration (barycentric initial conditions)
 rho0 = 1.0
@@ -131,25 +175,34 @@ bodies_incomp = [copy.deepcopy(sun), copy.deepcopy(mercury)]
 opts_incomp = {
     'use_compressible': False,
     'use_quadrature': False,
-    'save_every': 100,
+    'save_every': max(1, n_steps // 2000),
     'verbose': False,
 }
 
 traj_incomp, diag_incomp = integrate_orbit(bodies_incomp, medium, dt, n_steps, opts_incomp)
 
-# Extract relative orbital elements
-t_incomp, omega_incomp, elems_incomp = relative_orbit_series(traj_incomp, M_total, K)
-omega_incomp_unwrapped = np.unwrap(omega_incomp)
+analysis_incomp = analyse_precession(traj_incomp, M_total, K, T_orbit)
+domega_per_orbit_incomp = analysis_incomp['slope_per_orbit']
+peri_per_orbit_incomp = analysis_incomp['peri_per_orbit']
+peri_std_incomp = analysis_incomp['peri_std']
+n_peri_incomp = analysis_incomp['n_peri_cycles']
+t_incomp = analysis_incomp['t']
+elems_incomp = analysis_incomp['elems']
 
-if len(t_incomp) > 10:
-    coeffs = np.polyfit(t_incomp, omega_incomp_unwrapped, deg=1)
-    domega_dt_incomp = coeffs[0]
-    domega_per_orbit_incomp = domega_dt_incomp * T_orbit
-else:
-    domega_per_orbit_incomp = np.nan
-
-print(f"Precession (incompressible): {domega_per_orbit_incomp:.6e} rad/orbit")
-print(f"                           = {domega_per_orbit_incomp * 206265:.6e} arcsec/orbit")
+print(f"Precession (incompressible, slope fit): {domega_per_orbit_incomp:.6e} rad/orbit")
+print(
+    f"                                      = {domega_per_orbit_incomp * 206265:.6e} arcsec/orbit"
+)
+if np.isfinite(peri_per_orbit_incomp):
+    err_arcsec = peri_std_incomp * 206265.0
+    print(
+        f"Periapsis-to-periapsis: {peri_per_orbit_incomp:.6e} rad/orbit"
+        f" ± {peri_std_incomp:.2e} (n = {n_peri_incomp})"
+    )
+    print(
+        f"                       = {peri_per_orbit_incomp * 206265:.6e} arcsec/orbit"
+        f" ± {err_arcsec:.2e}"
+    )
 print()
 
 # Run WITH compressible forces
@@ -162,26 +215,35 @@ bodies_comp = [copy.deepcopy(sun), copy.deepcopy(mercury)]
 opts_comp = {
     'use_compressible': True,
     'use_quadrature': False,
-    'save_every': 100,
+    'save_every': max(1, n_steps // 2000),
     'verbose': False,
     'n_points': 128,
 }
 
 traj_comp, diag_comp = integrate_orbit(bodies_comp, medium, dt, n_steps, opts_comp)
 
-# Extract relative orbital elements
-t_comp, omega_comp, elems_comp = relative_orbit_series(traj_comp, M_total, K)
-omega_comp_unwrapped = np.unwrap(omega_comp)
+analysis_comp = analyse_precession(traj_comp, M_total, K, T_orbit)
+domega_per_orbit_comp = analysis_comp['slope_per_orbit']
+peri_per_orbit_comp = analysis_comp['peri_per_orbit']
+peri_std_comp = analysis_comp['peri_std']
+n_peri_comp = analysis_comp['n_peri_cycles']
+t_comp = analysis_comp['t']
+elems_comp = analysis_comp['elems']
 
-if len(t_comp) > 10:
-    coeffs = np.polyfit(t_comp, omega_comp_unwrapped, deg=1)
-    domega_dt_comp = coeffs[0]
-    domega_per_orbit_comp = domega_dt_comp * T_orbit
-else:
-    domega_per_orbit_comp = np.nan
-
-print(f"Precession (compressible): {domega_per_orbit_comp:.6e} rad/orbit")
-print(f"                         = {domega_per_orbit_comp * 206265:.6e} arcsec/orbit")
+print(f"Precession (compressible, slope fit): {domega_per_orbit_comp:.6e} rad/orbit")
+print(
+    f"                                   = {domega_per_orbit_comp * 206265:.6e} arcsec/orbit"
+)
+if np.isfinite(peri_per_orbit_comp):
+    err_arcsec = peri_std_comp * 206265.0
+    print(
+        f"Periapsis-to-periapsis: {peri_per_orbit_comp:.6e} rad/orbit"
+        f" ± {peri_std_comp:.2e} (n = {n_peri_comp})"
+    )
+    print(
+        f"                       = {peri_per_orbit_comp * 206265:.6e} arcsec/orbit"
+        f" ± {err_arcsec:.2e}"
+    )
 print()
 
 # GR prediction
@@ -191,14 +253,37 @@ print(f"             = {GR_precession * 206265:.6e} arcsec/orbit")
 print()
 
 # Difference between compressible and incompressible
-delta_precession = domega_per_orbit_comp - domega_per_orbit_incomp
+delta_precession_slope = domega_per_orbit_comp - domega_per_orbit_incomp
+if np.isfinite(peri_per_orbit_comp) and np.isfinite(peri_per_orbit_incomp):
+    delta_precession_peri = peri_per_orbit_comp - peri_per_orbit_incomp
+else:
+    delta_precession_peri = np.nan
 print("=" * 70)
 print("ANALYSIS")
 print("=" * 70)
 print()
 
-print(f"Precession difference (comp - incomp): {delta_precession:.6e} rad/orbit")
-print(f"                                     = {delta_precession * 206265:.6e} arcsec/orbit")
+print(
+    f"Precession difference (slope fit): {delta_precession_slope:.6e} rad/orbit"
+)
+print(
+    f"                                   = {delta_precession_slope * 206265:.6e} arcsec/orbit"
+)
+if GR_precession != 0:
+    print(
+        f"                                   ≈ {delta_precession_slope / GR_precession:.2f} × GR"
+    )
+if np.isfinite(delta_precession_peri):
+    print(
+        f"Periapsis-to-periapsis difference: {delta_precession_peri:.6e} rad/orbit"
+    )
+    print(
+        f"                                   = {delta_precession_peri * 206265:.6e} arcsec/orbit"
+    )
+    if GR_precession != 0:
+        print(
+            f"                                   ≈ {delta_precession_peri / GR_precession:.2f} × GR"
+        )
 print()
 
 if np.isfinite(domega_per_orbit_incomp) and abs(domega_per_orbit_incomp) > 1e-3:
@@ -213,9 +298,12 @@ if np.isfinite(domega_per_orbit_incomp) and abs(domega_per_orbit_incomp) > 1e-3:
     print("  4. Apsidal precession from non-Keplerian forces")
     print()
     print("The compressible correction is:")
-    print(f"  Δ(Δω) = {delta_precession:.6e} rad/orbit")
-    print(f"        = {delta_precession * 206265:.6e} arcsec/orbit")
-    if abs(delta_precession) < abs(domega_per_orbit_incomp) * 0.1:
+    print(f"  Δ(Δω)_slope = {delta_precession_slope:.6e} rad/orbit")
+    print(f"             = {delta_precession_slope * 206265:.6e} arcsec/orbit")
+    if np.isfinite(delta_precession_peri):
+        print(f"  Δ(Δω)_peri  = {delta_precession_peri:.6e} rad/orbit")
+        print(f"             = {delta_precession_peri * 206265:.6e} arcsec/orbit")
+    if abs(delta_precession_slope) < abs(domega_per_orbit_incomp) * 0.1:
         print("  This is SMALL compared to the incompressible precession.")
         print("  So the compressible force is NOT the main issue!")
 else:
@@ -248,19 +336,40 @@ print(
 bodies_refined = [copy.deepcopy(sun), copy.deepcopy(mercury)]
 traj_refined, _ = integrate_orbit(bodies_refined, medium, dt_refined, n_steps_refined, opts_incomp_refined)
 
-t_refined, omega_refined, _ = relative_orbit_series(traj_refined, M_total, K)
-omega_refined_unwrapped = np.unwrap(omega_refined)
-coeffs_refined = np.polyfit(t_refined, omega_refined_unwrapped, deg=1)
-domega_dt_refined = coeffs_refined[0]
-domega_per_orbit_refined = domega_dt_refined * T_orbit
+analysis_refined = analyse_precession(traj_refined, M_total, K, T_orbit)
+domega_per_orbit_refined = analysis_refined['slope_per_orbit']
+peri_per_orbit_refined = analysis_refined['peri_per_orbit']
+peri_std_refined = analysis_refined['peri_std']
+n_peri_refined = analysis_refined['n_peri_cycles']
 
-print(f"Refined precession (incompressible): {domega_per_orbit_refined:.6e} rad/orbit")
-print(f"                                     = {domega_per_orbit_refined * 206265:.6e} arcsec/orbit")
+print(
+    f"Refined precession (incompressible, slope fit): {domega_per_orbit_refined:.6e} rad/orbit"
+)
+print(
+    f"                                           = {domega_per_orbit_refined * 206265:.6e} arcsec/orbit"
+)
+if np.isfinite(peri_per_orbit_refined):
+    err_arcsec = peri_std_refined * 206265.0
+    print(
+        f"Periapsis-to-periapsis: {peri_per_orbit_refined:.6e} rad/orbit"
+        f" ± {peri_std_refined:.2e} (n = {n_peri_refined})"
+    )
+    print(
+        f"                       = {peri_per_orbit_refined * 206265:.6e} arcsec/orbit"
+        f" ± {err_arcsec:.2e}"
+    )
 if domega_per_orbit_refined != 0:
     ratio = abs(domega_per_orbit_incomp / domega_per_orbit_refined)
 else:
     ratio = np.inf
 print(f"Ratio coarse/refined ≈ {ratio:.1f}")
+if (
+    np.isfinite(peri_per_orbit_incomp)
+    and np.isfinite(peri_per_orbit_refined)
+    and peri_per_orbit_refined != 0
+):
+    ratio_peri = abs(peri_per_orbit_incomp / peri_per_orbit_refined)
+    print(f"Ratio coarse/refined (peri) ≈ {ratio_peri:.1f}")
 print()
 
 print("=" * 70)
