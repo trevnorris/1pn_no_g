@@ -203,6 +203,34 @@ def test_magnitude_check():
     print("\n✓ Magnitude check completed!\n")
 
 
+def test_velocity_dependence():
+    """Ensure compressible force responds to the body's velocity."""
+    print("=" * 70)
+    print("TEST 5: Velocity dependence")
+    print("=" * 70)
+
+    medium = create_test_medium(cs=1.0e3)
+
+    # Use relatively large velocities to amplify the signal
+    bodies_forward = create_test_bodies()
+    bodies_forward[1].v = np.array([0.0, 8.0, 0.0])
+    F_forward = force_compressible_quadrature(1, bodies_forward, medium, n_points=256)
+
+    bodies_reverse = create_test_bodies()
+    bodies_reverse[1].v = np.array([0.0, -8.0, 0.0])
+    F_reverse = force_compressible_quadrature(1, bodies_reverse, medium, n_points=256)
+
+    diff = np.linalg.norm(F_forward - F_reverse)
+
+    print(f"Forward velocity force:  {F_forward}")
+    print(f"Reverse velocity force:  {F_reverse}")
+    print(f"Difference magnitude:    {diff:.6e}")
+
+    assert diff > 0.0, "Compressible force should depend on body velocity"
+
+    print("\n✓ Velocity dependence confirmed!\n")
+
+
 def main():
     """Run all tests."""
     print("\n" + "=" * 70)
@@ -214,6 +242,7 @@ def main():
         test_infinite_cs_limit()
         test_cs_scaling()
         test_magnitude_check()
+        test_velocity_dependence()
 
         print("=" * 70)
         print("ALL TESTS PASSED!")
