@@ -1,0 +1,217 @@
+# Superfluid Orbit Simulator Configuration
+# Mercury orbit - pure incompressible baseline
+#
+# ============================================================================
+# PURPOSE
+# ============================================================================
+# This configuration provides a pure incompressible (cs → ∞) baseline for
+# Mercury's orbit with NO compressible corrections. This serves as the
+# Newtonian/Keplerian reference case with ZERO perihelion precession.
+#
+# By comparing this incompressible run with the compressible version
+# (same parameters except use_compressible=true), we can isolate the
+# pure 1PN-like effects arising from finite sound speed corrections.
+#
+# Physical effects demonstrated:
+# - Pure Keplerian orbit (no relativistic corrections)
+# - Zero perihelion precession (incompressible limit)
+# - Perfect energy and angular momentum conservation
+# - Baseline for measuring precession: Δθ = θ_compressible - θ_incompressible
+#
+# Key differences from compressible Mercury:
+# - use_compressible: false (no velocity-dependent corrections)
+# - cs: 1e10 AU/yr (very large, effectively infinite)
+# - Expect ZERO precession (θ_peri constant to machine precision)
+# - Forces reduce to pure inverse-square law: F = K*M1*M2/r^2
+#
+# Isolation of 1PN effects:
+# Run both this config and mercury_orbit.yaml (with use_compressible=true).
+# The difference in precession rates gives the pure 1PN contribution:
+#   Δθ_1PN = θ_precession(compressible) - θ_precession(incompressible)
+#   Expected: Δθ_1PN ≈ 43 arcsec/century for Mercury
+
+# ============================================================================
+# Medium: Ambient superfluid properties
+# ============================================================================
+medium:
+  # Ambient density [code units: arbitrary, sets overall scale]
+  rho0: 1.0
+
+  # Sound speed [AU/yr]
+  # VERY LARGE: cs = 1e10 AU/yr (effectively infinite)
+  # Mercury orbital speed v ~ 4.5e-11 AU/yr
+  # Mach number M = v/cs ~ 4.5e-21 << 1
+  # Compressible corrections scale as M^2 ~ 2e-41, negligible even if enabled
+  # Combined with use_compressible=false, ensures pure incompressible limit
+  cs: 10000000000.0
+
+  # Mass-intake factor [code units]
+  # K = rho0/(4*pi*beta0^2) = 7.9577e-22
+  # Same as standard Mercury for direct comparison
+  beta0: 10000000000.0
+
+  # Rarefaction exponent (Solar System regime: constant beta)
+  gamma_beta: 0.0
+
+# ============================================================================
+# Bodies: Fluid intakes (mass objects)
+# ============================================================================
+bodies:
+  - name: Sun
+    # Mass [M_sun, code units]
+    M: 1.0
+
+    # Position [AU]
+    x: [0.0, 0.0, 0.0]
+
+    # Velocity [AU/yr]
+    v: [0.0, 0.0, 0.0]
+
+    # Control surface radius [AU]
+    R: 0.001
+
+  - name: Mercury
+    # Mass [M_sun units]
+    # M_mercury = 3.3e-7 M_sun (actual Mercury/Sun mass ratio)
+    M: 3.3e-07
+
+    # Position [AU] - start at perihelion
+    # Mercury's semi-major axis: a = 0.387 AU
+    # For circular orbit: r = a
+    x: [0.387, 0.0, 0.0]
+
+    # Velocity [AU/yr] - perpendicular to radial for circular orbit
+    # v_circ = sqrt(K*M_sun/a) = sqrt(7.9577e-22 * 1.0 / 0.387)
+    #        = 4.5346e-11 AU/yr
+    # IDENTICAL to standard Mercury config for direct comparison
+    v: [0.0, 4.5346062834869914e-11, 0.0]
+
+    # Control surface radius [AU]
+    R: 0.0005
+
+# ============================================================================
+# Numerics: Integration and force calculation options
+# ============================================================================
+numerics:
+  # Timestep [yr]
+  # Same as standard Mercury: dt = 0.002 yr
+  # Mercury period T ~ 0.24 yr, so dt ~ T/120
+  dt: 0.002
+
+  # Total number of integration steps
+  # Same as standard Mercury: 200000 steps
+  # Total time: 200000 * 0.002 = 400 yr (~1667 orbits)
+  # Long baseline for high-precision precession measurement
+  steps: 200000
+
+  # Audit frequency: check analytic vs quadrature forces
+  # Check every 500 steps (~1 yr) for validation
+  audit_every: 500
+
+  # Number of quadrature points for audit (Fibonacci sphere)
+  # Same as standard Mercury: 512 points for high accuracy
+  npts_audit: 512
+
+  # Use compressible force corrections (finite cs)?
+  # FALSE: Pure incompressible baseline, NO velocity-dependent corrections
+  # This is the KEY DIFFERENCE from standard Mercury config
+  # Forces reduce to: F = K*M1*M2*r_hat/r^2 (no velocity terms)
+  use_compressible: false
+
+  # Use flux-based mass intake evolution?
+  # False: masses remain constant (standard Solar System)
+  use_flux_mass: false
+
+  # Intake update frequency (not used when use_flux_mass=false)
+  intake_every: 2000
+
+# ============================================================================
+# GR 1PN Comparator: Independent reference calculation
+# ============================================================================
+compare_gr_1pn:
+  # Enable GR comparison module
+  # GR will still compute 1PN precession for reference
+  # The difference highlights that slab forces give ZERO precession
+  # when compressible corrections are disabled
+  enable: true
+
+  # Speed of light [AU/yr]
+  # c = 299792 km/s = 63239.7263 AU/yr
+  c_light: 63239.7263
+
+  # Measure perihelion precession
+  # Track apsis passages to confirm ZERO precession in incompressible limit
+  # Expect: dθ_peri/dt = 0 (constant perihelion angle)
+  # Any measured precession is purely numerical error
+  measure_peri: true
+
+# ============================================================================
+# Outputs: What to save and how often
+# ============================================================================
+outputs:
+  # Save state every N steps
+  # Same as standard Mercury: save every 1000 steps (2 yr intervals)
+  save_every: 1000
+
+  # Write trajectory to CSV file
+  write_csv: true
+
+  # List of plots to generate
+  plots:
+    - orbit
+    - precession_vs_time  # Should show flat line (zero precession)
+    - force_decomp
+    - energy
+    - elements
+
+# ============================================================================
+# Expected outputs for this configuration
+# ============================================================================
+# - Stable circular orbit with radius a = 0.387 AU
+# - Orbital period T ~ 0.24 yr (88 days, same as real Mercury)
+# - ZERO perihelion precession: dθ_peri/dt = 0 ± numerical error
+# - Perihelion angle constant: θ_peri(t) = θ_peri(0) for all t
+# - Perfect Keplerian orbit (no relativistic corrections)
+# - Energy conservation: dE/E < 1e-8 (better than compressible case)
+# - Angular momentum conservation: dL/L < 1e-10 (near machine precision)
+# - Forces match quadrature to < 0.05% (simple inverse-square law)
+#
+# Comparison with compressible Mercury:
+# - Run this config alongside mercury_orbit.yaml (use_compressible=true)
+# - Measure precession difference: Δθ = θ_comp - θ_incomp
+# - Expected: Δθ ≈ 43 arcsec/century (GR 1PN prediction for Mercury)
+# - This isolates the pure 1PN contribution from finite cs
+#
+# Validation criteria:
+# 1. Precession rate: |dθ_peri/dt| < 1e-10 rad/yr (effectively zero)
+# 2. Perihelion angle drift: |θ_peri(400 yr) - θ_peri(0)| < 1e-6 rad
+# 3. Energy conservation: |E(400 yr) - E(0)|/E(0) < 1e-7
+# 4. Angular momentum conservation: |L(400 yr) - L(0)|/L(0) < 1e-9
+# 5. Orbital radius stable: 0.386 < r < 0.388 AU throughout
+# 6. GR comparison shows large discrepancy (GR predicts ~43"/century, slab gives ~0)
+#
+# Use cases:
+# - Baseline for measuring 1PN precession effects
+# - Validate Keplerian orbit implementation
+# - Test energy/momentum conservation in pure Newtonian limit
+# - Confirm that precession ONLY appears with use_compressible=true
+# - Demonstrate 1/cs^2 scaling by comparing with finite cs runs
+#
+# Recommended comparison workflow:
+# 1. Run this config (incompressible_baseline.yaml)
+# 2. Run mercury_orbit.yaml (compressible, cs=10000)
+# 3. Run mercury_orbit.yaml with cs=5000 (compressible, 2x stronger effect)
+# 4. Plot precession vs 1/cs^2 to verify quadratic scaling
+# 5. Extrapolate to cs=c (speed of light) to compare with GR
+#
+# Expected precession scaling with cs:
+# - cs = 1e10:  θ ≈ 0 arcsec/century (this config, incompressible)
+# - cs = 10000: θ ≈ 43 arcsec/century (if scaled to match GR)
+# - cs = 5000:  θ ≈ 172 arcsec/century (4x stronger, scales as cs^-2)
+# - cs = 63239.7 (c): θ ≈ 0.01 arcsec/century (if matching GR at c)
+#
+# Physics interpretation:
+# The incompressible limit (cs → ∞) corresponds to Newtonian gravity.
+# Finite cs introduces velocity-dependent corrections analogous to 1PN GR.
+# The slab formalism naturally reproduces relativistic effects from
+# finite sound speed in the superfluid medium, without invoking spacetime curvature.

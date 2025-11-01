@@ -53,7 +53,7 @@ from slab.io_cfg import (
 from slab.dynamics import integrate_orbit, estimate_orbital_period
 from slab.bodies import Body
 from slab.medium import Medium
-from slab.diagnostics import compute_precession, find_periapsis_passages
+from slab.diagnostics import compute_precession, find_periapsis_passages, compute_mass_drift
 
 
 # ============================================================================
@@ -311,6 +311,10 @@ def compute_summary(
     steps_per_sec = n_steps / elapsed_time if elapsed_time > 0 else 0.0
     time_per_orbit = elapsed_time / (times[-1] / T_orbit) if T_orbit > 0 else 0.0
 
+    # Mass drift diagnostics
+    body_names = [body.name for body in bodies]
+    mass_drift_data = compute_mass_drift(trajectory, body_names)
+
     summary = {
         'timing': {
             'elapsed_seconds': elapsed_time,
@@ -341,6 +345,7 @@ def compute_summary(
             'mean_max': mean_max_force,
             'overall_max': max_force_overall,
         },
+        'mass_drift': mass_drift_data,
         'audits': {
             'n_audits': len(audit_errors),
             'mean_error': audit_mean_error,
@@ -415,6 +420,41 @@ def print_summary(summary: Dict[str, Any], verbose: bool = False) -> None:
     else:
         quality = "POOR (check timestep)"
     print(f"  Quality:            {quality}")
+    print()
+
+    # Mass conservation (mass drift)
+    md = summary['mass_drift']
+    print(f"Mass conservation:")
+    for i, body_name in enumerate(md['bodies']):
+        rel_drift = md['rel_drift'][i]
+        max_rel_drift = md['max_rel_drift'][i]
+
+        # Format drift with appropriate precision
+        if rel_drift == 0.0:
+            drift_str = "0.00e+00"
+        else:
+            drift_str = f"{rel_drift:.2e}"
+
+        # Pass/fail check: drift should be < 1e-12 for constant-mass regime
+        if rel_drift < 1e-12:
+            status = "PASS"
+        elif rel_drift < 1e-9:
+            status = "WARN"
+        else:
+            status = "FAIL"
+
+        print(f"  {body_name:12s}: ΔM/M = {drift_str}  (max: {max_rel_drift:.2e})  [{status}]")
+
+    # Overall assessment
+    max_drift_all = np.max(md['rel_drift'])
+    if max_drift_all < 1e-12:
+        print(f"  Status:             EXCELLENT (negligible drift)")
+    elif max_drift_all < 1e-9:
+        print(f"  Status:             GOOD (acceptable drift)")
+    elif max_drift_all < 1e-6:
+        print(f"  Status:             WARNING (non-negligible drift)")
+    else:
+        print(f"  Status:             FAIL (significant drift - check use_flux_mass setting)")
     print()
 
     # Momentum conservation
@@ -577,6 +617,7 @@ def save_outputs(
         bodies_history.append(snapshot_bodies)
 
     # Save trajectory CSV
+    csv_path = None
     if config['outputs']['write_csv']:
         csv_path = output_dir / "trajectory.csv"
         if verbose:
@@ -632,7 +673,8 @@ def save_outputs(
 
     print()
     print(f"✓ Outputs saved to: {output_dir.absolute()}")
-    print(f"  - {csv_path.name}")
+    if csv_path is not None:
+        print(f"  - {csv_path.name}")
     print(f"  - {json_path.name}")
     print()
 

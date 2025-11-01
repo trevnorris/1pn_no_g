@@ -1,0 +1,206 @@
+# Superfluid Orbit Simulator Configuration
+# Equal-mass binary system orbiting common barycenter
+#
+# ============================================================================
+# PURPOSE
+# ============================================================================
+# This configuration demonstrates a symmetric two-body system where both
+# masses are equal and orbit their common center of mass (barycenter). This
+# provides an excellent test of:
+# - Center-of-mass conservation (should remain exactly at origin)
+# - Symmetry preservation in the dynamics
+# - Binary star/planet dynamics in the slab formalism
+# - Force symmetry: F_12 = -F_21 (Newton's 3rd law analog)
+#
+# Physical effects demonstrated:
+# - Circular binary orbit around barycenter
+# - Perfect symmetry: both bodies follow identical orbits (180° apart)
+# - Zero net momentum: p_total = 0 at all times
+# - Conserved barycenter: r_com = 0 at all times
+# - Reduced-mass dynamics: μ = M1*M2/(M1+M2) = M/2 for equal masses
+# - Minimal precession (circular orbit, low total mass)
+#
+# Initial conditions:
+# - Two equal masses: M1 = M2 = 1e-6 M_sun (much lighter than Sun)
+# - Separation: d = 1.0 AU (distance between bodies)
+# - Each body at distance a = d/2 = 0.5 AU from barycenter
+# - Circular orbit velocity: v = sqrt(K*M_total/(2*a))
+#   where M_total = M1 + M2 = 2e-6, a = 0.5 AU
+# - K = rho0/(4*pi*beta0^2) = 7.9577e-22
+# - Effective force between bodies: F = K*M1*M2/d^2
+# - Centripetal force: F = M1*v^2/a
+# - Setting equal: K*M1*M2/d^2 = M1*v^2/a
+# - v^2 = K*M2*a/d^2 = K*M2/(2*d) since a = d/2
+# - For equal masses M1=M2=M: v = sqrt(K*M/(2*d))
+# - v = sqrt(7.9577e-22 * 1e-6 / (2*1.0)) = sqrt(3.9789e-28) = 1.9947e-14 AU/yr
+# - Orbital period: T = 2*pi*a/v = 2*pi*0.5/1.9947e-14 ≈ 1.5756e14 yr
+#   (Note: This is extremely long due to small masses!)
+
+# ============================================================================
+# Medium: Ambient superfluid properties
+# ============================================================================
+medium:
+  # Ambient density [code units: arbitrary, sets overall scale]
+  rho0: 1.0
+
+  # Sound speed [AU/yr]
+  # Use high value to minimize compressible corrections
+  # Orbital speeds v ~ 2e-14 AU/yr << cs, so highly subsonic
+  cs: 10000.0
+
+  # Mass-intake factor [code units]
+  # K = rho0/(4*pi*beta0^2) = 7.9577e-22
+  beta0: 10000000000.0
+
+  # Rarefaction exponent (Solar System regime: constant beta)
+  gamma_beta: 0.0
+
+# ============================================================================
+# Bodies: Fluid intakes (mass objects)
+# ============================================================================
+bodies:
+  - name: Body1
+    # Mass [M_sun units]
+    # Both masses equal: M = 1e-6 M_sun (about 300 Earth masses)
+    M: 1.0e-06
+
+    # Position [AU] - start at +x side of barycenter
+    # Distance from barycenter: a = separation/2 = 0.5 AU
+    x: [0.5, 0.0, 0.0]
+
+    # Velocity [AU/yr] - perpendicular to radial for circular orbit
+    # v = sqrt(K*M/(2*d)) where d = 1.0 AU, M = 1e-6
+    # v = sqrt(7.9577e-22 * 1e-6 / 2.0) = 1.9947e-14 AU/yr
+    # Velocity in +y direction for counterclockwise orbit
+    v: [0.0, 1.9947e-14, 0.0]
+
+    # Control surface radius [AU]
+    # Must be << separation/2 = 0.5 AU
+    # Use R ~ 1e-3 AU (1/500 of separation)
+    R: 0.001
+
+  - name: Body2
+    # Mass [M_sun units]
+    # Equal to Body1 for symmetric binary
+    M: 1.0e-06
+
+    # Position [AU] - start at -x side of barycenter
+    # 180° opposite to Body1, distance a = 0.5 AU from origin
+    x: [-0.5, 0.0, 0.0]
+
+    # Velocity [AU/yr] - opposite to Body1 for zero net momentum
+    # Same magnitude, opposite direction: v = -1.9947e-14 in y
+    # This ensures center of mass remains at origin
+    v: [0.0, -1.9947e-14, 0.0]
+
+    # Control surface radius [AU]
+    # Same as Body1 for symmetry
+    R: 0.001
+
+# ============================================================================
+# Numerics: Integration and force calculation options
+# ============================================================================
+numerics:
+  # Timestep [yr]
+  # With extremely slow velocities (v ~ 2e-14 AU/yr), we can use larger dt
+  # But for testing purposes, use dt = 0.01 yr for reasonable sampling
+  dt: 0.01
+
+  # Total number of integration steps
+  # 5000 steps * 0.01 yr/step = 50 yr total simulation time
+  # Note: orbital period is extremely long (T ~ 1e14 yr), so this covers
+  # only a tiny fraction of one orbit. The purpose is to verify:
+  # - Linear motion is maintained
+  # - Center of mass doesn't drift
+  # - Symmetry is preserved
+  # - Forces are equal and opposite
+  steps: 5000
+
+  # Audit frequency: check analytic vs quadrature forces
+  # Check every 100 steps (1 yr intervals) for validation
+  audit_every: 100
+
+  # Number of quadrature points for audit (Fibonacci sphere)
+  # 512 points for good accuracy
+  npts_audit: 512
+
+  # Use compressible force corrections (finite cs)?
+  # True: include 1PN-like corrections (though effect will be tiny)
+  use_compressible: true
+
+  # Use flux-based mass intake evolution?
+  # False: masses remain constant (test conservation with fixed masses)
+  use_flux_mass: false
+
+  # Intake update frequency (not used when use_flux_mass=false)
+  intake_every: 2000
+
+# ============================================================================
+# GR 1PN Comparator: Independent reference calculation
+# ============================================================================
+compare_gr_1pn:
+  # Enable GR comparison module
+  # For binary systems, GR module tracks relative motion
+  enable: true
+
+  # Speed of light [AU/yr]
+  # c = 299792 km/s = 63239.7263 AU/yr
+  c_light: 63239.7263
+
+  # Measure perihelion precession
+  # For circular orbit, apsis tracking may not be meaningful
+  # but enable for completeness
+  measure_peri: true
+
+# ============================================================================
+# Outputs: What to save and how often
+# ============================================================================
+outputs:
+  # Save state every N steps
+  # Save every 50 steps (0.5 yr intervals) for detailed trajectory
+  save_every: 50
+
+  # Write trajectory to CSV file
+  write_csv: true
+
+  # List of plots to generate
+  plots:
+    - orbit
+    - energy
+    - elements
+
+# ============================================================================
+# Expected outputs for this configuration
+# ============================================================================
+# - Symmetric circular orbits around barycenter (origin)
+# - Separation maintained at d = 1.0 AU throughout simulation
+# - Center of mass remains at origin: |r_com| < 1e-10 AU at all times
+# - Total momentum conserved: |p_total| < 1e-20 at all times
+# - Forces are equal and opposite: |F_1 + F_2| < 1e-10 * |F_1|
+# - Each body at constant distance a = 0.5 AU from origin
+# - Orbital speed constant: v = 1.9947e-14 AU/yr for each body
+# - Angular momentum conserved: L = 2*M*a*v = const
+# - Energy conserved: dE/E < 1e-8 over 50 yr
+# - Negligible precession (circular orbit + low mass + low velocity)
+#
+# Validation tests:
+# 1. Barycenter conservation: r_com = (M1*r1 + M2*r2)/(M1+M2) = 0
+# 2. Momentum conservation: p_total = M1*v1 + M2*v2 = 0
+# 3. Symmetry: |r1| = |r2| = 0.5 AU, |v1| = |v2| = 1.9947e-14 AU/yr
+# 4. Force symmetry: F_on_1 = -F_on_2 (Newton's 3rd law)
+# 5. Energy: E = 0.5*(M1*v1^2 + M2*v2^2) - K*M1*M2/d = const
+# 6. Angular momentum: L = M1*r1×v1 + M2*r2×v2 = const
+#
+# Use cases:
+# - Test center-of-mass conservation in multi-body systems
+# - Validate force symmetry (Newton's 3rd law analog)
+# - Verify reduced-mass dynamics for equal-mass binaries
+# - Test numerical stability for symmetric configurations
+# - Baseline for unequal-mass binary comparisons
+#
+# To modify:
+# - Unequal masses: set M1 ≠ M2, adjust positions so r_com = 0
+# - Different separation: scale positions and recalculate velocities
+# - Eccentric binary: add x-component to velocities
+# - More massive: increase masses to reduce orbital period
+# - Three-body: add third body at Lagrange point (requires new calculations)

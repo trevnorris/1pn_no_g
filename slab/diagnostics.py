@@ -879,3 +879,141 @@ def lagrange_points_L123(
         L3_pos = body_a.x - 0.9 * r_ab
 
     return [L1_pos, L2_pos, L3_pos]
+
+
+def compute_mass_drift(
+    trajectory: Dict,
+    body_names: List[str]
+) -> Dict[str, any]:
+    """Compute mass drift diagnostics over a trajectory.
+
+    For each body, track how mass M evolves over time. In the constant-mass
+    (Solar System) regime, mass should be conserved with negligible drift.
+    This diagnostic validates that Ṁ (mass intake rate) is negligible.
+
+    Parameters
+    ----------
+    trajectory : dict
+        Trajectory data from integrate_orbit with keys:
+        - 't': time array, shape (n_steps,)
+        - 'M': mass array, shape (n_steps, n_bodies)
+        - 'x', 'v', 'Q': position, velocity, intake (not used here)
+    body_names : List[str]
+        Names of bodies (for labeling output)
+
+    Returns
+    -------
+    dict
+        Dictionary with:
+        - 'bodies': list of body names
+        - 'initial_mass': M(0) for each body, shape (n_bodies,)
+        - 'final_mass': M(final) for each body, shape (n_bodies,)
+        - 'abs_drift': |M(final) - M(0)|, shape (n_bodies,)
+        - 'rel_drift': |M(final) - M(0)| / M(0), shape (n_bodies,)
+        - 'max_rel_drift': max(|M(t) - M(0)| / M(0)) over all timesteps, shape (n_bodies,)
+
+    Notes
+    -----
+    Design decisions:
+    1. Relative drift is the key metric: |ΔM|/M(0) should be << 1e-12 for
+       constant-mass systems (Solar System regime).
+
+    2. Max drift tracks the peak deviation over the entire trajectory, not
+       just the final value. This catches transient mass fluctuations.
+
+    3. Absolute drift is provided for context but relative drift is more
+       physically meaningful (mass-independent metric).
+
+    4. In Solar System regime with use_flux_mass=False, drift should be
+       exactly zero (masses never updated). Non-zero drift indicates:
+       - Numerical roundoff (acceptable if < 1e-15)
+       - Bug in mass update logic (if non-zero)
+
+    5. In variable-mass regime (use_flux_mass=True), drift can be non-zero
+       but should track physical intake. This diagnostic helps distinguish
+       intended mass evolution from numerical errors.
+
+    Edge cases:
+    - If M(0) = 0 for a body, relative drift is undefined (returns np.inf)
+    - Single timestep: drift is zero by definition
+    - Empty trajectory: returns empty arrays
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> # Constant mass trajectory (Solar System regime)
+    >>> trajectory = {
+    ...     't': np.array([0.0, 1.0, 2.0]),
+    ...     'M': np.array([[1.0, 1e-6], [1.0, 1e-6], [1.0, 1e-6]]),
+    ... }
+    >>> drift = compute_mass_drift(trajectory, ["Sun", "Earth"])
+    >>> drift['rel_drift']  # Should be ~0 for constant mass
+    array([0., 0.])
+    >>> drift['max_rel_drift']
+    array([0., 0.])
+
+    >>> # Variable mass trajectory (with intake)
+    >>> trajectory_var = {
+    ...     't': np.array([0.0, 1.0, 2.0]),
+    ...     'M': np.array([[1.0, 1e-6], [1.0, 1.01e-6], [1.0, 1.02e-6]]),
+    ... }
+    >>> drift_var = compute_mass_drift(trajectory_var, ["Sun", "Earth"])
+    >>> drift_var['rel_drift'][1]  # Earth gained 2% mass
+    0.02
+    """
+    # Extract mass history
+    masses = trajectory['M']  # shape: (n_steps, n_bodies)
+    n_steps, n_bodies = masses.shape
+
+    # Validate inputs
+    if n_bodies != len(body_names):
+        raise ValueError(
+            f"Number of bodies in trajectory ({n_bodies}) does not match "
+            f"number of body names ({len(body_names)})"
+        )
+
+    if n_steps == 0:
+        # Empty trajectory
+        return {
+            'bodies': body_names,
+            'initial_mass': np.array([]),
+            'final_mass': np.array([]),
+            'abs_drift': np.array([]),
+            'rel_drift': np.array([]),
+            'max_rel_drift': np.array([]),
+        }
+
+    # Initial and final masses
+    M_initial = masses[0, :]  # shape: (n_bodies,)
+    M_final = masses[-1, :]   # shape: (n_bodies,)
+
+    # Absolute drift: |M(final) - M(0)|
+    abs_drift = np.abs(M_final - M_initial)
+
+    # Relative drift: |M(final) - M(0)| / M(0)
+    # Handle M(0) = 0 case: set to inf (undefined)
+    rel_drift = np.zeros(n_bodies)
+    for i in range(n_bodies):
+        if M_initial[i] != 0:
+            rel_drift[i] = abs_drift[i] / M_initial[i]
+        else:
+            rel_drift[i] = np.inf
+
+    # Maximum relative drift over all timesteps
+    max_rel_drift = np.zeros(n_bodies)
+    for i in range(n_bodies):
+        if M_initial[i] != 0:
+            # Compute |M(t) - M(0)| / M(0) for all t
+            drift_history = np.abs(masses[:, i] - M_initial[i]) / M_initial[i]
+            max_rel_drift[i] = np.max(drift_history)
+        else:
+            max_rel_drift[i] = np.inf
+
+    return {
+        'bodies': body_names,
+        'initial_mass': M_initial,
+        'final_mass': M_final,
+        'abs_drift': abs_drift,
+        'rel_drift': rel_drift,
+        'max_rel_drift': max_rel_drift,
+    }

@@ -1,0 +1,177 @@
+# Superfluid Orbit Simulator Configuration
+# Sun-Earth circular orbit baseline example
+#
+# ============================================================================
+# PURPOSE
+# ============================================================================
+# This configuration demonstrates a near-circular Earth-like orbit as a
+# baseline case with minimal perihelion precession. Earth's actual orbit
+# has very low eccentricity (e ≈ 0.017), making it an excellent test case
+# for circular orbit stability and energy conservation.
+#
+# Physical effects demonstrated:
+# - Nearly circular orbit with minimal eccentricity
+# - Very small perihelion precession (scales as e^2, so weak for circular)
+# - Long-term energy and angular momentum conservation
+# - Comparison between slab forces and GR 1PN predictions
+#
+# Initial conditions:
+# - Semi-major axis: a = 1.0 AU (Earth's orbital radius)
+# - Eccentricity: e ≈ 0.017 (Earth's actual eccentricity)
+# - Start at perihelion: r_peri = a(1-e) = 0.983 AU
+# - Circular velocity: v_circ = sqrt(K*M_sun/a)
+#   where K = rho0/(4*pi*beta0^2)
+# - With rho0=1.0, beta0=1e10: K = 7.9577e-22
+# - v_circ = sqrt(7.9577e-22 * 1.0 / 1.0) = 2.8209e-11 AU/yr
+# - Orbital period: T = 2*pi*sqrt(a^3/(K*M)) ≈ 1.0 yr
+
+# ============================================================================
+# Medium: Ambient superfluid properties
+# ============================================================================
+medium:
+  # Ambient density [code units: arbitrary, sets overall scale]
+  rho0: 1.0
+
+  # Sound speed [AU/yr, much faster than orbital speeds]
+  # Using high value (10000 AU/yr) to minimize compressible corrections.
+  # Earth's orbital speed v ~ 2*pi AU/yr ≈ 6.28 AU/yr, so Mach ~ 6e-4.
+  # Precession scales as (v/cs)^2, so expect very small precession.
+  cs: 10000.0
+
+  # Mass-intake factor [code units]
+  # Same as Mercury example for consistency.
+  # K = rho0/(4*pi*beta0^2) = 1.0/(4*pi*1e20) = 7.9577e-22
+  beta0: 10000000000.0
+
+  # Rarefaction exponent (Solar System regime: constant beta)
+  gamma_beta: 0.0
+
+# ============================================================================
+# Bodies: Fluid intakes (mass objects)
+# ============================================================================
+bodies:
+  - name: Sun
+    # Mass [M_sun, code units]
+    M: 1.0
+
+    # Position [AU] - at origin for single-body gravitational system
+    x: [0.0, 0.0, 0.0]
+
+    # Velocity [AU/yr] - stationary (barycentric frame approximation)
+    v: [0.0, 0.0, 0.0]
+
+    # Control surface radius [AU]
+    # Must satisfy: mouth_size << R << separation
+    # With separation ~ 1 AU, use R ~ 1e-3 AU
+    R: 0.001
+
+  - name: Earth
+    # Mass [M_sun units]
+    # M_earth = 3.0e-6 M_sun (Earth/Sun mass ratio)
+    M: 3.0e-06
+
+    # Position [AU] - start at perihelion
+    # r_peri = a(1-e) = 1.0 * (1 - 0.017) = 0.983 AU
+    x: [0.983, 0.0, 0.0]
+
+    # Velocity [AU/yr] - perpendicular to radial direction for circular orbit
+    # v_circ = sqrt(K*M_sun/a) where K = rho0/(4*pi*beta0^2)
+    # K = 1.0/(4*pi*1e20) = 7.9577e-22
+    # v = sqrt(7.9577e-22 * 1.0 / 1.0) = 2.8209e-11 AU/yr
+    # At perihelion, velocity is slightly higher: v_peri = v_circ * sqrt((1+e)/(1-e))
+    # v_peri = 2.8209e-11 * sqrt(1.017/0.983) = 2.8209e-11 * 1.0173 = 2.8697e-11 AU/yr
+    v: [0.0, 2.8697e-11, 0.0]
+
+    # Control surface radius [AU]
+    # Smaller than Sun due to smaller mass
+    R: 0.0005
+
+# ============================================================================
+# Numerics: Integration and force calculation options
+# ============================================================================
+numerics:
+  # Timestep [yr]
+  # Earth's orbital period T ~ 1.0 yr, so use dt ~ T/500 for good accuracy
+  dt: 0.002
+
+  # Total number of integration steps
+  # 1000 steps * 0.002 yr/step = 2.0 yr total simulation time
+  # Covers ~2 Earth orbits for validation
+  steps: 1000
+
+  # Audit frequency: check analytic vs quadrature forces
+  # Check every 100 steps (0.2 yr intervals)
+  audit_every: 100
+
+  # Number of quadrature points for audit (Fibonacci sphere)
+  # 512 points provides good accuracy for validation
+  npts_audit: 512
+
+  # Use compressible force corrections (finite cs)?
+  # True: include 1PN-like corrections (perihelion precession)
+  # Expect very small precession due to low eccentricity
+  use_compressible: true
+
+  # Use flux-based mass intake evolution?
+  # False: masses remain constant (standard Solar System)
+  use_flux_mass: false
+
+  # Intake update frequency (not used when use_flux_mass=false)
+  intake_every: 2000
+
+# ============================================================================
+# GR 1PN Comparator: Independent reference calculation
+# ============================================================================
+compare_gr_1pn:
+  # Enable GR comparison module
+  # Compare slab precession with GR 1PN predictions
+  enable: true
+
+  # Speed of light [AU/yr]
+  # c = 299792 km/s = 63239.7263 AU/yr
+  c_light: 63239.7263
+
+  # Measure perihelion precession
+  # Track apsis passages and compute precession rate
+  # Note: With low eccentricity, precession will be very small
+  measure_peri: true
+
+# ============================================================================
+# Outputs: What to save and how often
+# ============================================================================
+outputs:
+  # Save state every N steps
+  # Save every 50 steps (0.1 yr intervals) for detailed trajectory
+  save_every: 50
+
+  # Write trajectory to CSV file
+  write_csv: true
+
+  # List of plots to generate
+  plots:
+    - orbit
+    - energy
+    - elements
+
+# ============================================================================
+# Expected outputs for this configuration
+# ============================================================================
+# - Stable near-circular orbit with semi-major axis a ≈ 1.0 AU
+# - Orbital period T ≈ 1.0 yr (365.25 days, Earth's actual period)
+# - Very low eccentricity e ≈ 0.017 maintained throughout simulation
+# - Minimal perihelion precession (scales as e^2, so ~300x smaller than Mercury)
+# - GR 1PN precession for Earth: ~3.8 arcsec/century vs ~43 arcsec/century for Mercury
+# - Excellent energy conservation: dE/E < 1e-6 over multiple orbits
+# - Angular momentum conservation: dL/L < 1e-8
+# - Forces match quadrature to < 0.1% at all audit points
+#
+# Use cases:
+# - Baseline for circular orbit stability testing
+# - Energy/momentum conservation validation over long timescales
+# - Comparison with Mercury to verify e^2 scaling of precession
+# - CI/CD regression testing for basic orbital mechanics
+#
+# To modify for different scenarios:
+# - Pure circular orbit: set x = [1.0, 0.0, 0.0], v = [0.0, 2.8209e-11, 0.0]
+# - Higher eccentricity: reduce v_y or add v_x component
+# - Different semi-major axis: scale position and adjust velocity accordingly

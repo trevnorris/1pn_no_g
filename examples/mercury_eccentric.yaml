@@ -1,0 +1,184 @@
+# Superfluid Orbit Simulator Configuration
+# Mercury with enhanced eccentricity
+#
+# ============================================================================
+# PURPOSE
+# ============================================================================
+# This configuration demonstrates a highly eccentric Mercury-like orbit to
+# test the simulator's handling of strong orbital variations and enhanced
+# perihelion precession. By increasing eccentricity from Mercury's actual
+# e = 0.206 to e = 0.3, we amplify the precession effect which scales as e^2.
+#
+# Physical effects demonstrated:
+# - Highly eccentric orbit with large perihelion-aphelion variation
+# - Enhanced perihelion precession (stronger than real Mercury)
+# - Precession scales as e^2, so expect ~2.1x more precession than e=0.206
+# - Tests force accuracy during close perihelion passages
+# - Validates velocity-dependent corrections in high-Mach regime
+#
+# Initial conditions:
+# - Semi-major axis: a = 0.387 AU (Mercury's actual value)
+# - Eccentricity: e = 0.3 (enhanced from real e = 0.206)
+# - Start at perihelion: r_peri = a(1-e) = 0.387 * 0.7 = 0.2709 AU
+# - Perihelion velocity: v_peri = sqrt(K*M_sun/a) * sqrt((1+e)/(1-e))
+#   where K = rho0/(4*pi*beta0^2) = 7.9577e-22
+# - v_circ = sqrt(7.9577e-22 * 1.0 / 0.387) = 4.5346e-11 AU/yr
+# - v_peri = 4.5346e-11 * sqrt(1.3/0.7) = 4.5346e-11 * 1.3636 = 6.1839e-11 AU/yr
+# - Orbital period: T = 2*pi*sqrt(a^3/(K*M)) ≈ 0.24 yr
+
+# ============================================================================
+# Medium: Ambient superfluid properties
+# ============================================================================
+medium:
+  # Ambient density [code units: arbitrary, sets overall scale]
+  rho0: 1.0
+
+  # Sound speed [AU/yr]
+  # Same as standard Mercury config for direct comparison.
+  # cs = 10000 AU/yr >> v_orbital for well-defined 1PN expansion.
+  # Even at enhanced perihelion speed v ~ 6.2e-11, Mach ~ 6e-15 << 1.
+  cs: 10000.0
+
+  # Mass-intake factor [code units]
+  # K = rho0/(4*pi*beta0^2) = 7.9577e-22
+  beta0: 10000000000.0
+
+  # Rarefaction exponent (Solar System regime: constant beta)
+  gamma_beta: 0.0
+
+# ============================================================================
+# Bodies: Fluid intakes (mass objects)
+# ============================================================================
+bodies:
+  - name: Sun
+    # Mass [M_sun, code units]
+    M: 1.0
+
+    # Position [AU] - at origin
+    x: [0.0, 0.0, 0.0]
+
+    # Velocity [AU/yr] - stationary (barycentric approximation)
+    v: [0.0, 0.0, 0.0]
+
+    # Control surface radius [AU]
+    # Must satisfy: mouth_size << R << separation
+    # Minimum separation (perihelion) = 0.2709 AU, so R ~ 1e-3 is safe
+    R: 0.001
+
+  - name: Mercury
+    # Mass [M_sun units]
+    # M_mercury = 3.3e-7 M_sun (actual Mercury/Sun mass ratio)
+    M: 3.3e-07
+
+    # Position [AU] - start at perihelion
+    # r_peri = a(1-e) = 0.387 * (1 - 0.3) = 0.2709 AU
+    x: [0.2709, 0.0, 0.0]
+
+    # Velocity [AU/yr] - perpendicular to radial for perihelion passage
+    # v_circ = sqrt(K*M_sun/a) = sqrt(7.9577e-22 * 1.0 / 0.387) = 4.5346e-11
+    # v_peri = v_circ * sqrt((1+e)/(1-e)) = 4.5346e-11 * sqrt(1.3/0.7)
+    #        = 4.5346e-11 * 1.3636 = 6.1839e-11 AU/yr
+    v: [0.0, 6.1839e-11, 0.0]
+
+    # Control surface radius [AU]
+    # Smaller than Sun due to much smaller mass
+    R: 0.0005
+
+# ============================================================================
+# Numerics: Integration and force calculation options
+# ============================================================================
+numerics:
+  # Timestep [yr]
+  # Mercury period T ~ 0.24 yr, use dt ~ T/120 for accuracy during perihelion
+  # dt = 0.002 yr gives 120 steps per orbit
+  dt: 0.002
+
+  # Total number of integration steps
+  # 200000 steps * 0.002 yr/step = 400 yr total simulation time
+  # Covers ~1667 orbits for long-term precession measurement
+  steps: 200000
+
+  # Audit frequency: check analytic vs quadrature forces
+  # Check every 500 steps (~1 yr) for validation
+  audit_every: 500
+
+  # Number of quadrature points for audit (Fibonacci sphere)
+  # Use 512 for good accuracy at close perihelion approaches
+  npts_audit: 512
+
+  # Use compressible force corrections (finite cs)?
+  # True: include 1PN-like corrections (perihelion precession)
+  # Expect enhanced precession due to higher eccentricity
+  use_compressible: true
+
+  # Use flux-based mass intake evolution?
+  # False: masses remain constant (standard Solar System)
+  use_flux_mass: false
+
+  # Intake update frequency (not used when use_flux_mass=false)
+  intake_every: 2000
+
+# ============================================================================
+# GR 1PN Comparator: Independent reference calculation
+# ============================================================================
+compare_gr_1pn:
+  # Enable GR comparison module
+  # Compare slab precession with GR 1PN for enhanced eccentricity
+  enable: true
+
+  # Speed of light [AU/yr]
+  # c = 299792 km/s = 63239.7263 AU/yr
+  c_light: 63239.7263
+
+  # Measure perihelion precession
+  # Track apsis passages and compute precession rate
+  # Expect ~2.1x more precession than standard Mercury (e=0.206)
+  # due to e^2 scaling: (0.3/0.206)^2 ≈ 2.12
+  measure_peri: true
+
+# ============================================================================
+# Outputs: What to save and how often
+# ============================================================================
+outputs:
+  # Save state every N steps
+  # Save every 1000 steps (2 yr intervals) for manageable file size
+  save_every: 1000
+
+  # Write trajectory to CSV file
+  write_csv: true
+
+  # List of plots to generate
+  plots:
+    - orbit
+    - precession_vs_time
+    - force_decomp
+    - elements
+
+# ============================================================================
+# Expected outputs for this configuration
+# ============================================================================
+# - Highly eccentric orbit: e = 0.3 maintained throughout simulation
+# - Semi-major axis: a = 0.387 AU (constant for conservative forces)
+# - Perihelion distance: r_peri = 0.2709 AU
+# - Aphelion distance: r_aph = a(1+e) = 0.5031 AU
+# - Orbital period: T ≈ 0.24 yr (88 days, same as real Mercury)
+# - Perihelion precession rate: ~2.1x larger than standard Mercury
+#   - Real Mercury: ~43 arcsec/century (e=0.206)
+#   - This config: ~91 arcsec/century (e=0.3)
+#   - Scaling: (0.3/0.206)^2 * 43 = 91 arcsec/century
+# - Energy conservation: dE/E < 1e-5 over 400 yr
+# - Angular momentum conservation: dL/L < 1e-7
+# - Forces match quadrature to < 0.2% even at close perihelion
+#
+# Use cases:
+# - Test high-eccentricity orbit stability and precession
+# - Verify e^2 scaling of perihelion precession
+# - Validate force accuracy during close approaches
+# - Stress-test velocity-dependent force corrections
+# - Compare with standard Mercury (e=0.206) to measure precession scaling
+#
+# To modify:
+# - Even higher eccentricity: increase e to 0.5 or 0.7 (requires smaller dt)
+# - Compare with circular: reduce e to 0.0 for baseline
+# - Vary cs: test precession scaling as 1/cs^2
+# - Different semi-major axis: scale position and velocity accordingly

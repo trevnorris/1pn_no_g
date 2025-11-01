@@ -1,0 +1,189 @@
+# Superfluid Orbit Simulator Configuration
+# Quick validation test for CI/CD and rapid testing
+#
+# ============================================================================
+# PURPOSE
+# ============================================================================
+# This configuration is designed for fast validation testing in CI/CD pipelines
+# and rapid development iteration. It uses a Mercury-like orbit with reduced
+# computational parameters to complete in under 1 minute while still providing
+# meaningful physics validation.
+#
+# Physical effects demonstrated:
+# - Same orbital physics as full Mercury simulation
+# - Perihelion precession (qualitative agreement with GR 1PN)
+# - Energy and angular momentum conservation
+# - Force accuracy validation via quadrature audits
+#
+# Trade-offs vs full Mercury simulation:
+# - Reduced steps: 1000 vs 200000 (covers ~2 yr vs 400 yr)
+# - Reduced quadrature points: 128 vs 512 (faster audits, slightly less accurate)
+# - Same timestep: dt = 0.002 yr (maintains numerical accuracy)
+# - Same physical parameters: a, e, M, cs (same physics, less statistics)
+#
+# Expected runtime: ~30-60 seconds on typical hardware
+# Use cases: CI/CD regression testing, rapid parameter exploration, debugging
+
+# ============================================================================
+# Medium: Ambient superfluid properties
+# ============================================================================
+medium:
+  # Ambient density [code units: arbitrary, sets overall scale]
+  rho0: 1.0
+
+  # Sound speed [AU/yr, much faster than orbital speeds]
+  # Same as full Mercury config for consistent physics
+  cs: 10000.0
+
+  # Mass-intake factor [code units]
+  # K = rho0/(4*pi*beta0^2) = 7.9577e-22
+  beta0: 10000000000.0
+
+  # Rarefaction exponent (Solar System regime: constant beta)
+  gamma_beta: 0.0
+
+# ============================================================================
+# Bodies: Fluid intakes (mass objects)
+# ============================================================================
+bodies:
+  - name: Sun
+    # Mass [M_sun, code units]
+    M: 1.0
+
+    # Position [AU]
+    x: [0.0, 0.0, 0.0]
+
+    # Velocity [AU/yr]
+    v: [0.0, 0.0, 0.0]
+
+    # Control surface radius [AU]
+    R: 0.001
+
+  - name: Mercury
+    # Mass [M_sun units]
+    # M_mercury = 3.3e-7 M_sun
+    M: 3.3e-07
+
+    # Position [AU] - start at perihelion
+    # Mercury's semi-major axis: a = 0.387 AU
+    x: [0.387, 0.0, 0.0]
+
+    # Velocity [AU/yr] - perpendicular to radial for circular orbit
+    # v_circ = sqrt(K*M_sun/a) = sqrt(7.9577e-22 * 1.0 / 0.387)
+    #        = 4.5346e-11 AU/yr
+    v: [0.0, 4.5346062834869914e-11, 0.0]
+
+    # Control surface radius [AU]
+    R: 0.0005
+
+# ============================================================================
+# Numerics: Integration and force calculation options
+# ============================================================================
+numerics:
+  # Timestep [yr]
+  # Same as full simulation: dt = 0.002 yr maintains numerical accuracy
+  # Mercury period T ~ 0.24 yr, so dt ~ T/120 for good resolution
+  dt: 0.002
+
+  # Total number of integration steps
+  # REDUCED: 1000 steps (vs 200000 in full simulation)
+  # Total time: 1000 * 0.002 = 2.0 yr (~8 Mercury orbits)
+  # Sufficient for basic validation and energy conservation checks
+  steps: 1000
+
+  # Audit frequency: check analytic vs quadrature forces
+  # Check every 100 steps (~0.2 yr) for frequent validation
+  # More frequent than full sim (500) to catch issues quickly
+  audit_every: 100
+
+  # Number of quadrature points for audit (Fibonacci sphere)
+  # REDUCED: 128 points (vs 512 in full simulation)
+  # Trade-off: ~4x faster audits, accuracy ~1-2% vs ~0.1%
+  # Still sufficient for validation testing
+  npts_audit: 128
+
+  # Use compressible force corrections (finite cs)?
+  # True: include 1PN-like corrections (perihelion precession)
+  use_compressible: true
+
+  # Use flux-based mass intake evolution?
+  # False: masses remain constant (standard Solar System)
+  use_flux_mass: false
+
+  # Intake update frequency (not used when use_flux_mass=false)
+  intake_every: 2000
+
+# ============================================================================
+# GR 1PN Comparator: Independent reference calculation
+# ============================================================================
+compare_gr_1pn:
+  # Enable GR comparison module
+  # Validate qualitative agreement with GR 1PN in short run
+  enable: true
+
+  # Speed of light [AU/yr]
+  # c = 299792 km/s = 63239.7263 AU/yr
+  c_light: 63239.7263
+
+  # Measure perihelion precession
+  # Track apsis passages over ~8 orbits
+  # Won't have high statistics, but can detect precession signal
+  measure_peri: true
+
+# ============================================================================
+# Outputs: What to save and how often
+# ============================================================================
+outputs:
+  # Save state every N steps
+  # Save every 50 steps (0.1 yr) for reasonable trajectory resolution
+  # Total saved frames: 1000/50 = 20 snapshots
+  save_every: 50
+
+  # Write trajectory to CSV file
+  write_csv: true
+
+  # List of plots to generate
+  # Minimal set for quick validation
+  plots:
+    - orbit
+    - energy
+
+# ============================================================================
+# Expected outputs for this configuration
+# ============================================================================
+# - Stable circular orbit with radius a = 0.387 AU
+# - Orbital period T ~ 0.24 yr (88 days, Mercury's actual period)
+# - Completes ~8 full orbits in 2 yr simulation time
+# - Energy conservation: dE/E < 1e-5 (slightly relaxed due to reduced audit accuracy)
+# - Angular momentum conservation: dL/L < 1e-7
+# - Forces match quadrature to ~1-2% (vs ~0.1% with 512 points)
+# - Perihelion precession qualitatively consistent with GR 1PN
+# - Runtime: 30-60 seconds on typical hardware
+#
+# Validation criteria (for CI/CD pass/fail):
+# 1. Simulation completes without crashes
+# 2. Energy drift: |dE/E| < 1e-4 at end of run
+# 3. Angular momentum drift: |dL/L| < 1e-6 at end of run
+# 4. Audit force agreement: max error < 5% at any checkpoint
+# 5. Orbital radius stable: 0.38 < r < 0.40 AU throughout
+# 6. Precession signal detected (if use_compressible=true)
+#
+# Use cases:
+# - CI/CD regression testing (fast feedback on code changes)
+# - Rapid parameter exploration (quick iteration during development)
+# - Debugging numerical issues (fast turnaround for fixes)
+# - Pre-flight checks before long production runs
+# - Student/tutorial examples (completes while watching)
+#
+# To modify for different quick tests:
+# - Even faster: reduce to 500 steps (1 yr, ~4 orbits, <30 sec)
+# - More accuracy: increase npts_audit to 256 (still faster than 512)
+# - Test incompressible: set use_compressible=false, verify zero precession
+# - Test different orbit: change x, v while keeping same step count
+# - Disable audits: set audit_every=0 for maximum speed (not recommended for validation)
+#
+# Performance scaling:
+# - 128 quadrature points: ~4x faster audits than 512 points
+# - 1000 steps: ~200x faster than 200000 steps
+# - Overall speedup: ~200x faster (400 yr -> 2 yr simulation)
+# - Expected runtime: ~30-60 sec vs ~60-120 min for full Mercury
